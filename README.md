@@ -44,7 +44,12 @@ npm run dev
 npm run tauri build
 ```
 
-推送 `v0.1.0` 形式的 Git tag（或手动运行 Actions）会触发 [发布工作流](.github/workflows/release.yml)，构建：
+推送  Git tag（或手动运行 Actions）会触发 [发布工作流](.github/workflows/release.yml)，构建：
+
+```Shell
+git tag -f -a v0.x.x -m "Aurora Dict v0.x.x"
+git push --force origin v0.x.x
+```
 
 - macOS ARM64 与 Universal `.dmg`；
 - Windows x64 与 ARM64 NSIS `.exe`；
