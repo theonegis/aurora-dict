@@ -538,6 +538,14 @@ footer i { width: 1px; height: 10px; margin: 0 3px; background: rgba(109,102,135
   --on-accent: #fff;
 }
 
+/* Outer-window clipping must match the platform frame. Windows 11 uses an
+   8px top-level radius at 100% DPI; macOS is clipped natively at 12pt; Linux
+   has no cross-desktop system token, so the Adwaita-compatible 12px fallback
+   keeps custom-decorated windows coherent on GNOME and similar desktops. */
+:root[data-platform="windows"] { --window-radius: 8px; }
+:root[data-platform="macos"],
+:root[data-platform="linux"] { --window-radius: 12px; }
+
 :root[data-theme="red"] { --accent: #db5d6b; --accent-deep: #c54758; --accent-alt: #ed7e7c; --accent-rgb: 219, 93, 107; --soft-accent: rgba(219, 93, 107, .12); }
 :root[data-theme="orange"] { --accent: #df843d; --accent-deep: #c96c2f; --accent-alt: #efaa57; --accent-rgb: 223, 132, 61; --soft-accent: rgba(223, 132, 61, .13); }
 :root[data-theme="yellow"] { --accent: #bd8b00; --accent-deep: #9e7200; --accent-alt: #dfb52a; --accent-rgb: 189, 139, 0; --soft-accent: rgba(189, 139, 0, .13); --on-accent: #312700; }
