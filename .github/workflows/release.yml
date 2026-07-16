@@ -1,0 +1,147 @@
+name: Release desktop installers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing or new release tag, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      release_id: ${{ steps.release.outputs.release_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or reuse the release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$REQUESTED_TAG" in
+            v*) ;;
+            *) echo "Release tags must start with v (received: $REQUESTED_TAG)" >&2; exit 2 ;;
+          esac
+          APP_VERSION="$(node -p \"require('./src-tauri/tauri.conf.json').version\")"
+          [[ "$REQUESTED_TAG" == "v$APP_VERSION" ]] || {
+            echo "Tag $REQUESTED_TAG does not match src-tauri/tauri.conf.json version $APP_VERSION." >&2
+            exit 2
+          }
+
+          if ! gh release view "$REQUESTED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$REQUESTED_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --title "Aurora Dict ${REQUESTED_TAG#v}" \
+              --generate-notes
+          fi
+
+          echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
+          echo "release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG" --jq .id)" >> "$GITHUB_OUTPUT"
+
+  macos:
+    name: macOS ${{ matrix.name }}
+    needs: prepare-release
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ARM64
+            args: "--target aarch64-apple-darwin --bundles dmg"
+          - name: Universal
+            args: "--target universal-apple-darwin --bundles dmg"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          args: ${{ matrix.args }}
+          uploadUpdaterJson: false
+          releaseAssetNamePattern: "aurora-dict_[version]_[platform]_[arch]_[bundle][ext]"
+
+  windows:
+    name: Windows ${{ matrix.name }}
+    needs: prepare-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: x64
+            runner: windows-2022
+          - name: ARM64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          args: "--bundles nsis"
+          uploadUpdaterJson: false
+          releaseAssetNamePattern: "aurora-dict_[version]_[platform]_[arch]_[bundle][ext]"
+
+  linux:
+    name: Linux deb and rpm
+    needs: prepare-release
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Tauri Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          releaseId: ${{ needs.prepare-release.outputs.release_id }}
+          args: "--bundles deb,rpm"
+          uploadUpdaterJson: false
+          releaseAssetNamePattern: "aurora-dict_[version]_[platform]_[arch]_[bundle][ext]"

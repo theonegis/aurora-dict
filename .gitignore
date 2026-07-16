@@ -1,0 +1,42 @@
+# JavaScript build outputs and logs
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Rust / Tauri build outputs (the generated schemas are reproducible)
+src-tauri/target/
+src-tauri/gen/
+
+# Local dictionary databases and browser storage exports
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+src-tauri/resources/ecdict-sqlite-28.zip
+
+# Environment-specific secrets and local release configuration
+.env
+.env.*
+!.env.example
+
+# Generated AUR working directory and test artefacts
+aur/
+coverage/
+playwright-report/
+test-results/
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Playwright
+.playwright-cli/

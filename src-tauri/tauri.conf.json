@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aurora Dict",
+  "version": "0.1.0",
+  "identifier": "com.aurora.dictionary",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aurora Dict",
+        "width": 1120,
+        "height": 780,
+        "minWidth": 760,
+        "minHeight": 560,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "shadow": true,
+        "center": true,
+        "resizable": true,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' https://dict.youdao.com https://api.dictionaryapi.dev https://www.vocabulary.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://dict.youdao.com https:;"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/128x128.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": ["resources/ecdict-sqlite-28.zip", "resources/ECDICT-LICENSE.txt"],
+    "category": "Education",
+    "shortDescription": "A beautiful, fast bilingual dictionary."
+  }
+}

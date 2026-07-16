@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="aurora" x1="150" y1="126" x2="874" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#5F61D7"/>
+      <stop offset=".58" stop-color="#7665D4"/>
+      <stop offset="1" stop-color="#A96BCB"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="245" y1="210" x2="778" y2="816" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity=".98"/>
+      <stop offset="1" stop-color="#E9E7FF" stop-opacity=".91"/>
+    </linearGradient>
+  </defs>
+  <!-- A clean, self-contained rounded square: no art extends into the transparent Dock margin. -->
+  <rect x="112" y="112" width="800" height="800" rx="184" fill="url(#aurora)"/>
+  <rect x="183" y="183" width="658" height="658" rx="158" fill="url(#paper)"/>
+  <rect x="213" y="213" width="598" height="598" rx="141" fill="none" stroke="#6E67D5" stroke-opacity=".22" stroke-width="13" stroke-dasharray="16 16"/>
+  <path d="M430 647 513 354l82 293h-52l-18-70h-87l-19 70Zm31-116h52l-26-101-26 101Z" fill="#615DD0"/>
+  <path d="M628 616c-63 0-102-45-102-111 0-69 41-113 104-113 37 0 67 14 85 40l-39 28c-11-16-26-24-45-24-31 0-52 25-52 68 0 40 20 67 51 67 20 0 36-10 48-28l39 29c-20 30-50 44-89 44Z" fill="#615DD0"/>
+  <text x="512" y="739" text-anchor="middle" fill="#7670BD" font-family="Arial, sans-serif" font-size="48" font-weight="700" letter-spacing="9">中 · EN</text>
+</svg>
