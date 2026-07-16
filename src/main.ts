@@ -90,8 +90,6 @@ interface DisplaySettings {
   theme: ThemeId;
   language: UiLanguage;
   scale: number;
-  opacity: number;
-  blur: number;
   font: FontId;
   enabledSources: SourceId[];
   cacheLimit: number;
@@ -114,7 +112,7 @@ const copy = {
     dictionarySourceTitle: "Dictionary", dictionarySourceSubtitle: "Free Dictionary API", vocabularySourceTitle: "Vocabulary.com", vocabularySourceSubtitle: "英语学习",
     themeRed: "赤", themeOrange: "橙", themeYellow: "黄", themeGreen: "绿", themeCyan: "青", themeBlue: "蓝", themePurple: "紫", themeViolet: "罗兰", themeBlack: "黑",
     systemDefault: "系统默认", heroBefore: "让每一个词，", heroEmphasis: "恰好被理解。", heroCopy: "中英双向、离线优先。一个安静而专注的桌面字典。",
-    openSettings: "打开显示与主题设置", settingsTitle: "显示与主题", settingsCopy: "调整只保存在这台设备。主题色同时会用于标签、按钮和 Fluent 滚动条。",
+    openSettings: "打开应用设置", settingsTitle: "设置", settingsCopy: "外观与词典偏好仅保存在这台设备。界面固定采用高不透明度的 Mica 材质，以保持阅读清晰。",
     settingsCaption: "显示设置", lookupAria: "词典查询", searchPlaceholder: "输入英文查中文，输入中文查英文", searchInputAria: "查询单词", search: "查询", searchHint: "支持中文释义检索、英文拼写提示",
     selectSource: "选择词典来源", footerLocalFirst: "离线优先字典", footerLearning: "为从容学习而设计", noDefinition: "暂无释义", definition: "释义", wordForms: "词形式变化：",
     formPastTense: "过去式", formPastParticiple: "过去分词", formPresentParticiple: "现在分词", formThirdPerson: "第三人称单数", formComparative: "比较级", formSuperlative: "最高级", formPlural: "名词复数", formLemma: "原型词", formLemmaForm: "原型词的词形", formUnknown: "词形变化",
@@ -122,8 +120,8 @@ const copy = {
     examples: "双语例句", phrases: "相关短语", simpleYoudao: "简明", collinsYoudao: "柯林斯", collinsMeaning: "柯林斯释义", showMore: "查看更多", showLess: "收起",
     noMatch: "没有找到完全匹配的结果", startWord: "从一个词开始", localEmpty: "可以试试更短的词根，或检查拼写。完整 ECDICT 离线词库已随应用提供。", onlineEmpty: "换一个更具体的英文单词，或切换到本地词典继续查询。",
     queryFailed: "这次查询没有完成", retry: "再试一次", loading: "正在轻轻翻阅词页…", databasePreparing: "离线词库正在准备中，请稍后再试。", suggestion: "你是否想查询", inputSuggestions: "输入建议", spellingCorrection: "拼写纠正",
-    closeSettings: "关闭设置窗口", appearance: "外观", uiLanguage: "界面语言", chinese: "中文（简体）", english: "English", interfaceTheme: "界面主题", interfaceFont: "界面字体", interfaceScale: "界面缩放", interfaceOpacity: "界面透明度", materialBlur: "材质模糊",
-    displayedDictionaries: "显示的词典", defaultFour: "默认 4 个", queryCache: "查询缓存", cacheWords: "{count} 个单词", cacheOff: "关闭", reset: "恢复默认", done: "完成", youdaoNote: "在线内容经结构化提取后呈现；释义以原网页为准。", dictionaryNote: "通过无需 API Key 的 Free Dictionary API 查询。", genericOnlineNote: "在线内容经结构化提取后呈现；释义以原网页为准。",
+    closeSettings: "关闭设置窗口", appearance: "外观", dictionarySettings: "字典", softwareInformation: "软件信息", uiLanguage: "界面语言", chinese: "中文（简体）", english: "English", interfaceTheme: "界面主题", interfaceFont: "界面字体", interfaceScale: "界面缩放",
+    displayedDictionaries: "显示的词典", defaultFour: "默认 4 个", cacheStorage: "缓存存储", cacheWords: "{count} 个查询结果", reset: "恢复默认", done: "完成", author: "作者", contact: "联系方式", license: "使用许可", licenseText: "本软件可免费用于个人学习、教学、研究与非营利交流。任何商业使用、再分发或将其用于营利性服务前，均须事先获得作者书面同意。", youdaoNote: "在线内容经结构化提取后呈现；释义以原网页为准。", dictionaryNote: "通过无需 API Key 的 Free Dictionary API 查询。", genericOnlineNote: "在线内容经结构化提取后呈现；释义以原网页为准。",
   },
   en: {
     titlebarCaption: "Chinese–English Dictionary", closeWindow: "Close window", minimiseWindow: "Minimise window", maximiseWindow: "Maximise or restore window",
@@ -131,7 +129,7 @@ const copy = {
     dictionarySourceTitle: "Dictionary", dictionarySourceSubtitle: "Free Dictionary API", vocabularySourceTitle: "Vocabulary.com", vocabularySourceSubtitle: "English learning",
     themeRed: "Red", themeOrange: "Orange", themeYellow: "Yellow", themeGreen: "Green", themeCyan: "Cyan", themeBlue: "Blue", themePurple: "Purple", themeViolet: "Violet", themeBlack: "Black",
     systemDefault: "System default", heroBefore: "Every word, ", heroEmphasis: "clearly understood.", heroCopy: "Chinese–English, offline first. A calm, focused desktop dictionary.",
-    openSettings: "Open appearance settings", settingsTitle: "Appearance", settingsCopy: "These preferences stay on this device. The theme colour also styles tabs, buttons, and Fluent scrollbars.",
+    openSettings: "Open application settings", settingsTitle: "Settings", settingsCopy: "Appearance and dictionary preferences stay on this device. A high-opacity Mica material is used throughout to keep reading clear.",
     settingsCaption: "Appearance", lookupAria: "Dictionary lookup", searchPlaceholder: "Enter English for Chinese, or Chinese for English", searchInputAria: "Look up a word", search: "Search", searchHint: "Chinese definition search and English spelling hints",
     selectSource: "Select a dictionary source", footerLocalFirst: "Local-first dictionary", footerLearning: "Designed for unhurried learning", noDefinition: "No definition available", definition: "Definition", wordForms: "Word forms:",
     formPastTense: "Past tense", formPastParticiple: "Past participle", formPresentParticiple: "Present participle", formThirdPerson: "Third-person singular", formComparative: "Comparative", formSuperlative: "Superlative", formPlural: "Plural", formLemma: "Lemma", formLemmaForm: "Lemma form", formUnknown: "Word form",
@@ -139,8 +137,8 @@ const copy = {
     examples: "Bilingual examples", phrases: "Related phrases", simpleYoudao: "Concise", collinsYoudao: "Collins", collinsMeaning: "Collins definitions", showMore: "Show more", showLess: "Show less",
     noMatch: "No exact result found", startWord: "Start with a word", localEmpty: "Try a shorter stem or check the spelling. The complete ECDICT offline dictionary is included.", onlineEmpty: "Try a more specific English word, or switch to the local dictionary.",
     queryFailed: "This lookup did not finish", retry: "Try again", loading: "Turning through the pages…", databasePreparing: "The offline dictionary is getting ready. Please try again shortly.", suggestion: "Did you mean", inputSuggestions: "Suggestions", spellingCorrection: "Spelling correction",
-    closeSettings: "Close settings", appearance: "APPEARANCE", uiLanguage: "Interface language", chinese: "Chinese (Simplified)", english: "English", interfaceTheme: "Interface theme", interfaceFont: "Interface font", interfaceScale: "Interface scale", interfaceOpacity: "Interface opacity", materialBlur: "Material blur",
-    displayedDictionaries: "Displayed dictionaries", defaultFour: "4 by default", queryCache: "Query cache", cacheWords: "{count} words", cacheOff: "Off", reset: "Reset", done: "Done", youdaoNote: "Online content is presented after structured extraction; refer to the original page for the source wording.", dictionaryNote: "Queried through the Free Dictionary API with no API key.", genericOnlineNote: "Online content is presented after structured extraction; refer to the original page for the source wording.",
+    closeSettings: "Close settings", appearance: "Appearance", dictionarySettings: "Dictionary", softwareInformation: "Software information", uiLanguage: "Interface language", chinese: "Chinese (Simplified)", english: "English", interfaceTheme: "Interface theme", interfaceFont: "Interface font", interfaceScale: "Interface scale",
+    displayedDictionaries: "Displayed dictionaries", defaultFour: "4 by default", cacheStorage: "Cache storage", cacheWords: "{count} query results", reset: "Reset", done: "Done", author: "Author", contact: "Contact", license: "License", licenseText: "This software is free for personal learning, teaching, research, and non-profit exchange. Prior written permission from the author is required for any commercial use, redistribution, or use in a revenue-generating service.", youdaoNote: "Online content is presented after structured extraction; refer to the original page for the source wording.", dictionaryNote: "Queried through the Free Dictionary API with no API key.", genericOnlineNote: "Online content is presented after structured extraction; refer to the original page for the source wording.",
   },
 } as const;
 
@@ -173,12 +171,11 @@ const SETTINGS_STORAGE_KEY = "aurora-dictionary-display-settings";
 const QUERY_CACHE_DATABASE = "aurora-dictionary-query-cache";
 const QUERY_CACHE_STORE = "query-results";
 const DEFAULT_CACHE_LIMIT = 100;
+const CACHE_LIMIT_OPTIONS = [50, 100, 200, 500] as const;
 const defaultSettings: DisplaySettings = {
   theme: "purple",
   language: "zh",
   scale: 1,
-  opacity: 88,
-  blur: 28,
   font: SYSTEM_FONT_ID,
   enabledSources: ["local", "youdao", "dictionary", "vocabulary"],
   cacheLimit: DEFAULT_CACHE_LIMIT,
@@ -241,8 +238,12 @@ function formatText(key: CopyKey, values: Record<string, string>): string {
   return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), t(key));
 }
 
+function normaliseCacheLimit(value: number): number {
+  return CACHE_LIMIT_OPTIONS.includes(value as (typeof CACHE_LIMIT_OPTIONS)[number]) ? value : DEFAULT_CACHE_LIMIT;
+}
+
 function cacheLimitLabel(limit: number): string {
-  return limit === 0 ? t("cacheOff") : formatText("cacheWords", { count: String(limit) });
+  return formatText("cacheWords", { count: String(limit) });
 }
 
 root.addEventListener(
@@ -262,12 +263,7 @@ function loadSettings(): DisplaySettings {
     const theme = themes.some((item) => item.id === stored.theme) ? stored.theme! : defaultSettings.theme;
     const language: UiLanguage = stored.language === "en" ? "en" : "zh";
     const scale = clamp(Number(stored.scale) || defaultSettings.scale, 1, 2);
-    const opacity = clamp(Number(stored.opacity) || defaultSettings.opacity, 64, 100);
-    const blur = clamp(Number(stored.blur) || defaultSettings.blur, 0, 48);
-    const storedCacheLimit = Number(stored.cacheLimit);
-    const cacheLimit = Number.isFinite(storedCacheLimit)
-      ? clamp(Math.round(storedCacheLimit / 25) * 25, 0, 300)
-      : defaultSettings.cacheLimit;
+    const cacheLimit = normaliseCacheLimit(Number(stored.cacheLimit));
     const font = typeof stored.font === "string" && stored.font.trim() ? stored.font : defaultSettings.font;
     const enabledSources = Array.isArray(stored.enabledSources)
       ? stored.enabledSources.filter((source): source is SourceId => sources.some((item) => item.id === source))
@@ -276,8 +272,6 @@ function loadSettings(): DisplaySettings {
       theme,
       language,
       scale,
-      opacity,
-      blur,
       font,
       enabledSources: enabledSources.length ? enabledSources : ["local"],
       cacheLimit,
@@ -292,8 +286,8 @@ function clamp(value: number, minimum: number, maximum: number): number {
 }
 
 function persistSettings(): void {
-  const { theme, language, scale, opacity, blur, font, enabledSources, cacheLimit } = state.settings;
-  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ theme, language, scale, opacity, blur, font, enabledSources, cacheLimit }));
+  const { theme, language, scale, font, enabledSources, cacheLimit } = state.settings;
+  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ theme, language, scale, font, enabledSources, cacheLimit }));
 }
 
 function cacheKey(query: string): string {
@@ -335,7 +329,7 @@ function openQueryCache(): Promise<IDBDatabase> {
 
 async function readCachedQuery(query: string): Promise<QueryCacheRecord | null> {
   const key = cacheKey(query);
-  if (!key || state.settings.cacheLimit === 0) return null;
+  if (!key) return null;
   try {
     const database = await openQueryCache();
     const transaction = database.transaction(QUERY_CACHE_STORE, "readonly");
@@ -368,7 +362,7 @@ async function touchCachedQuery(query: string): Promise<void> {
 
 async function cacheSourceResults(query: string, results: Partial<Record<SourceId, SourceLookupResult>>): Promise<void> {
   const key = cacheKey(query);
-  if (!key || state.settings.cacheLimit === 0 || !Object.keys(results).length) return;
+  if (!key || !Object.keys(results).length) return;
   try {
     const database = await openQueryCache();
     const transaction = database.transaction(QUERY_CACHE_STORE, "readwrite");
@@ -412,8 +406,6 @@ function applySettings(): void {
   documentRoot.dataset.platform = isWindows() ? "windows" : isMac() ? "macos" : "linux";
   documentRoot.lang = state.settings.language === "zh" ? "zh-CN" : "en";
   documentRoot.style.setProperty("--ui-scale", state.settings.scale.toFixed(2));
-  documentRoot.style.setProperty("--surface-opacity", (state.settings.opacity / 100).toFixed(2));
-  documentRoot.style.setProperty("--material-blur", `${state.settings.blur}px`);
   const defaultFont = isWindows() ? '"Aurora Windows Chinese", Aptos, Arial, sans-serif' : systemFontStack;
   const font = state.settings.font === SYSTEM_FONT_ID ? defaultFont : `"${state.settings.font.replaceAll('"', "\\\"")}", ${defaultFont}`;
   documentRoot.style.setProperty("--ui-font", font);
@@ -564,6 +556,7 @@ function icon(name: string, size = 18): string {
     minus: '<path d="M6 12h12"/>',
     square: '<rect x="6" y="6" width="12" height="12" rx="1.5"/>',
     arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+    macZoom: '<path d="M4.75 9V4.75H9M4.75 4.75l5.1 5.1M19.25 15v4.25H15M19.25 19.25l-5.1-5.1"/>',
     import: '<path d="M12 3v12M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',
     chevron: '<path d="m8 10 4 4 4-4"/>',
     check: '<path d="m6 12 3.8 3.8L18.5 7"/>',
@@ -581,9 +574,9 @@ function renderWindowControls(): string {
   if (isMac()) {
     return `
       <div class="mac-controls" aria-label="${escapeHtml(t("titlebarCaption"))}">
-        <button class="traffic traffic-close" data-window-action="close" aria-label="${escapeHtml(t("closeWindow"))}">${icon("close", 10)}</button>
-        <button class="traffic traffic-minimise" data-window-action="minimise" aria-label="${escapeHtml(t("minimiseWindow"))}">${icon("minus", 10)}</button>
-        <button class="traffic traffic-maximise" data-window-action="maximise" aria-label="${escapeHtml(t("maximiseWindow"))}">${icon("arrow", 10)}</button>
+        <button class="traffic traffic-close" data-window-action="close" aria-label="${escapeHtml(t("closeWindow"))}">${icon("close", 8)}</button>
+        <button class="traffic traffic-minimise" data-window-action="minimise" aria-label="${escapeHtml(t("minimiseWindow"))}">${icon("minus", 8)}</button>
+        <button class="traffic traffic-maximise" data-window-action="maximise" aria-label="${escapeHtml(t("maximiseWindow"))}">${icon("macZoom", 8)}</button>
       </div>`;
   }
   return `
@@ -949,68 +942,50 @@ function settingsModal(): string {
         <p class="eyebrow">${escapeHtml(t("appearance"))}</p>
         <h2 id="settings-title">${escapeHtml(t("settingsTitle"))}</h2>
         <p class="modal-copy">${escapeHtml(t("settingsCopy"))}</p>
-        <section class="settings-section font-section language-section">
-          <label class="settings-label" for="ui-language"><span>${escapeHtml(t("uiLanguage"))}</span><small>${escapeHtml(state.settings.language === "zh" ? t("chinese") : t("english"))}</small></label>
-          <div class="native-select-wrap">
-            <select id="ui-language" class="settings-select" aria-label="${escapeHtml(t("uiLanguage"))}">
-              <option value="zh" ${settings.language === "zh" ? "selected" : ""}>${escapeHtml(t("chinese"))}</option>
-              <option value="en" ${settings.language === "en" ? "selected" : ""}>${escapeHtml(t("english"))}</option>
-            </select>
-          </div>
+        <section class="settings-module" aria-labelledby="appearance-section-title">
+          <h3 id="appearance-section-title" class="settings-module-heading">${escapeHtml(t("appearance"))}</h3>
+          <section class="settings-section font-section language-section">
+            <label class="settings-label" for="ui-language"><span>${escapeHtml(t("uiLanguage"))}</span><small>${escapeHtml(state.settings.language === "zh" ? t("chinese") : t("english"))}</small></label>
+            <div class="native-select-wrap">
+              <select id="ui-language" class="settings-select" aria-label="${escapeHtml(t("uiLanguage"))}">
+                <option value="zh" ${settings.language === "zh" ? "selected" : ""}>${escapeHtml(t("chinese"))}</option>
+                <option value="en" ${settings.language === "en" ? "selected" : ""}>${escapeHtml(t("english"))}</option>
+              </select>
+            </div>
+          </section>
+          <section class="settings-section">
+            <div class="settings-label"><span>${escapeHtml(t("interfaceTheme"))}</span><small>${escapeHtml(t(themes.find((item) => item.id === settings.theme)?.label ?? "themePurple"))}</small></div>
+            <div class="theme-grid" role="radiogroup" aria-label="${escapeHtml(t("interfaceTheme"))}">
+              ${themes.map((theme) => `<button class="theme-swatch ${settings.theme === theme.id ? "is-selected" : ""}" data-theme-choice="${theme.id}" role="radio" aria-checked="${settings.theme === theme.id}" title="${escapeHtml(t(theme.label))}"><i style="--swatch:${theme.color}"></i><span>${escapeHtml(t(theme.label))}</span></button>`).join("")}
+            </div>
+          </section>
+          <section class="settings-section font-section">
+            <label class="settings-label" for="ui-font"><span>${escapeHtml(t("interfaceFont"))}</span><small>${escapeHtml(fontOptions().find((item) => item.id === settings.font)?.label ?? t("systemDefault"))}</small></label>
+            <div class="native-select-wrap"><select id="ui-font" class="settings-select" aria-label="${escapeHtml(t("interfaceFont"))}">${fontOptions().map((font) => `<option value="${font.id}" ${settings.font === font.id ? "selected" : ""}>${font.label}</option>`).join("")}</select></div>
+          </section>
+          <section class="settings-section range-section">
+            <label class="settings-label" for="ui-scale"><span>${escapeHtml(t("interfaceScale"))}</span><output data-setting-value="scale">${settings.scale.toFixed(2)}×</output></label>
+            <input id="ui-scale" class="settings-range" type="range" min="1" max="2" step="0.05" value="${settings.scale}" />
+          </section>
         </section>
-        <section class="settings-section">
-          <div class="settings-label"><span>${escapeHtml(t("interfaceTheme"))}</span><small>${escapeHtml(t(themes.find((item) => item.id === settings.theme)?.label ?? "themePurple"))}</small></div>
-          <div class="theme-grid" role="radiogroup" aria-label="${escapeHtml(t("interfaceTheme"))}">
-            ${themes
-              .map(
-                (theme) => `
-                  <button class="theme-swatch ${settings.theme === theme.id ? "is-selected" : ""}" data-theme-choice="${theme.id}" role="radio" aria-checked="${settings.theme === theme.id}" title="${escapeHtml(t(theme.label))}">
-                    <i style="--swatch:${theme.color}"></i><span>${escapeHtml(t(theme.label))}</span>
-                  </button>`,
-              )
-              .join("")}
-          </div>
+        <section class="settings-module" aria-labelledby="dictionary-section-title">
+          <h3 id="dictionary-section-title" class="settings-module-heading">${escapeHtml(t("dictionarySettings"))}</h3>
+          <section class="settings-section source-settings-section">
+            <div class="settings-label"><span>${escapeHtml(t("displayedDictionaries"))}</span><small>${escapeHtml(t("defaultFour"))}</small></div>
+            <div class="source-settings-grid">${sources.map((source) => `<label class="source-setting-option"><input type="checkbox" data-source-enabled="${source.id}" ${settings.enabledSources.includes(source.id) ? "checked" : ""} /><span class="source-setting-check">${icon("check", 13)}</span><span><b>${escapeHtml(sourceTitle(source))}</b><small>${escapeHtml(sourceSubtitle(source))}</small></span></label>`).join("")}</div>
+          </section>
+          <section class="settings-section font-section">
+            <label class="settings-label" for="ui-cache-limit"><span>${escapeHtml(t("cacheStorage"))}</span><small>${escapeHtml(cacheLimitLabel(settings.cacheLimit))}</small></label>
+            <div class="native-select-wrap"><select id="ui-cache-limit" class="settings-select" aria-label="${escapeHtml(t("cacheStorage"))}">${CACHE_LIMIT_OPTIONS.map((limit) => `<option value="${limit}" ${settings.cacheLimit === limit ? "selected" : ""}>${escapeHtml(cacheLimitLabel(limit))}</option>`).join("")}</select></div>
+          </section>
         </section>
-        <section class="settings-section font-section">
-          <label class="settings-label" for="ui-font"><span>${escapeHtml(t("interfaceFont"))}</span><small>${escapeHtml(fontOptions().find((item) => item.id === settings.font)?.label ?? t("systemDefault"))}</small></label>
-          <div class="native-select-wrap">
-          <select id="ui-font" class="settings-select" aria-label="${escapeHtml(t("interfaceFont"))}">
-            ${fontOptions()
-              .map((font) => `<option value="${font.id}" ${settings.font === font.id ? "selected" : ""}>${font.label}</option>`)
-              .join("")}
-          </select>
-          </div>
-        </section>
-        <section class="settings-section range-section">
-          <label class="settings-label" for="ui-scale"><span>${escapeHtml(t("interfaceScale"))}</span><output data-setting-value="scale">${settings.scale.toFixed(2)}×</output></label>
-          <input id="ui-scale" class="settings-range" data-display-setting="scale" type="range" min="1" max="2" step="0.05" value="${settings.scale}" />
-        </section>
-        <section class="settings-section range-section">
-          <label class="settings-label" for="ui-opacity"><span>${escapeHtml(t("interfaceOpacity"))}</span><output data-setting-value="opacity">${settings.opacity}%</output></label>
-          <input id="ui-opacity" class="settings-range" data-display-setting="opacity" type="range" min="64" max="100" step="1" value="${settings.opacity}" />
-        </section>
-        <section class="settings-section range-section">
-          <label class="settings-label" for="ui-blur"><span>${escapeHtml(t("materialBlur"))}</span><output data-setting-value="blur">${settings.blur}px</output></label>
-          <input id="ui-blur" class="settings-range" data-display-setting="blur" type="range" min="0" max="48" step="1" value="${settings.blur}" />
-        </section>
-        <section class="settings-section range-section">
-          <label class="settings-label" for="ui-cache-limit"><span>${escapeHtml(t("queryCache"))}</span><output data-setting-value="cacheLimit">${escapeHtml(cacheLimitLabel(settings.cacheLimit))}</output></label>
-          <input id="ui-cache-limit" class="settings-range" data-display-setting="cacheLimit" type="range" min="0" max="300" step="25" value="${settings.cacheLimit}" />
-        </section>
-        <section class="settings-section source-settings-section">
-          <div class="settings-label"><span>${escapeHtml(t("displayedDictionaries"))}</span><small>${escapeHtml(t("defaultFour"))}</small></div>
-          <div class="source-settings-grid">
-            ${sources
-              .map(
-                (source) => `
-                  <label class="source-setting-option">
-                    <input type="checkbox" data-source-enabled="${source.id}" ${settings.enabledSources.includes(source.id) ? "checked" : ""} />
-                    <span class="source-setting-check">${icon("check", 13)}</span>
-                    <span><b>${escapeHtml(sourceTitle(source))}</b><small>${escapeHtml(sourceSubtitle(source))}</small></span>
-                  </label>`,
-              )
-              .join("")}
-          </div>
+        <section class="settings-module software-information" aria-labelledby="software-section-title">
+          <h3 id="software-section-title" class="settings-module-heading">${escapeHtml(t("softwareInformation"))}</h3>
+          <dl class="software-information-list">
+            <div><dt>${escapeHtml(t("author"))}</dt><dd>TheOneGIS</dd></div>
+            <div><dt>${escapeHtml(t("contact"))}</dt><dd><a href="mailto:614106917@qq.com">614106917@qq.com</a></dd></div>
+            <div class="license-row"><dt>${escapeHtml(t("license"))}</dt><dd>${escapeHtml(t("licenseText"))}</dd></div>
+          </dl>
         </section>
         <div class="modal-actions settings-actions">
           <button class="quiet-button" data-reset-settings>${escapeHtml(t("reset"))}</button>
@@ -1121,24 +1096,22 @@ function bindEvents(): void {
       render();
     });
   });
-  document.querySelectorAll<HTMLInputElement>("[data-display-setting]").forEach((input) => {
-    input.addEventListener("input", () => {
-      const setting = input.dataset.displaySetting;
-      const value = Number(input.value);
-      if (setting === "scale") state.settings.scale = value;
-      if (setting === "opacity") state.settings.opacity = value;
-      if (setting === "blur") state.settings.blur = value;
-      if (setting === "cacheLimit") state.settings.cacheLimit = value;
-      applySettings();
-      persistSettings();
-      if (setting === "cacheLimit") void trimQueryCache();
-      const output = document.querySelector<HTMLOutputElement>(`[data-setting-value="${setting}"]`);
-      if (output) {
-        const displayValue = setting === "scale" ? `${value.toFixed(2)}×` : setting === "opacity" ? `${value}%` : setting === "blur" ? `${value}px` : cacheLimitLabel(value);
-        output.value = displayValue;
-        output.textContent = displayValue;
-      }
-    });
+  document.querySelector<HTMLInputElement>("#ui-scale")?.addEventListener("input", (event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    state.settings.scale = value;
+    applySettings();
+    persistSettings();
+    const output = document.querySelector<HTMLOutputElement>('[data-setting-value="scale"]');
+    if (output) {
+      output.value = `${value.toFixed(2)}×`;
+      output.textContent = output.value;
+    }
+  });
+  document.querySelector<HTMLSelectElement>("#ui-cache-limit")?.addEventListener("change", (event) => {
+    state.settings.cacheLimit = normaliseCacheLimit(Number((event.target as HTMLSelectElement).value));
+    persistSettings();
+    void trimQueryCache();
+    render(false);
   });
   document.querySelector<HTMLSelectElement>("#ui-font")?.addEventListener("change", (event) => {
     state.settings.font = (event.target as HTMLSelectElement).value as FontId;

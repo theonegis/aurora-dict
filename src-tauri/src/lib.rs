@@ -1464,9 +1464,17 @@ pub fn run() {
         .setup(|app| {
             ensure_bundled_dictionary(&app.handle()).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
-                // Make the native surface transparent: the 12px clip applied in the
-                // webview is then the true outer edge, not an inner card inside an
-                // opaque platform window.
+                // Windows and Linux need an opaque native base below the CSS Mica
+                // layers. Otherwise every semi-transparent surface reveals the
+                // desktop rather than a softly tinted material.
+                #[cfg(not(target_os = "macos"))]
+                window
+                    .set_background_color(Some((247, 246, 255, 255).into()))
+                    .map_err(std::io::Error::other)?;
+
+                // macOS keeps a transparent native surface so the clipped 12pt
+                // webview layer remains the actual outer window edge.
+                #[cfg(target_os = "macos")]
                 window
                     .set_background_color(Some((0, 0, 0, 0).into()))
                     .map_err(std::io::Error::other)?;
