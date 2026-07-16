@@ -8,7 +8,7 @@ Aurora Dict 是一款为 Linux 用户而做、也同样适用于 macOS 与 Windo
 
 ## 特性
 
-- Windows、macOS 与 Linux 的原生桌面窗口，自定义标题栏和统一的 12px 窗体圆角。
+- Windows、macOS 与 Linux 的原生桌面窗口，自定义标题栏和统一的窗体圆角。
 - 安装包内置 ECDICT SQLite 离线词库；首次启动自动准备完成，无需用户导入。
 - 中文查英文、英文查中文、英文拼写建议，以及英式/美式音标与发音。
 - 四个可配置来源：本地 ECDICT、有道词典、[Free Dictionary API](https://dictionaryapi.dev/) 与 Vocabulary.com。
@@ -50,19 +50,7 @@ npm run tauri build
 - Windows x64 与 ARM64 NSIS `.exe`；
 - Linux x64 `.deb` 与 `.rpm`。
 
-工作流默认产生未签名的产物。面向最终用户发布前，请配置 Apple 公证/签名与 Windows 代码签名。
-
-发布完成后，可以生成提交给 AUR 的二进制包定义：
-
-```bash
-bash scripts/generate-aur-package.sh \
-  --repo <GitHub-用户名或组织>/<仓库名> \
-  --version 0.1.0
-
-cd aur/aurora-dict-bin
-makepkg --printsrcinfo > .SRCINFO
-makepkg -si
-```
+工作流默认产生未签名的产物。
 
 ## 在线来源说明
 
