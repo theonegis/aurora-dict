@@ -28,6 +28,16 @@ interface LocalLookup {
   sampleData: boolean;
 }
 
+interface LocalSuggestions {
+  suggestions: string[];
+  correction: boolean;
+}
+
+interface DictionaryStatus {
+  entryCount: number;
+  sampleData: boolean;
+}
+
 interface OnlineSense {
   partOfSpeech: string;
   definitions: string[];
@@ -111,7 +121,7 @@ const copy = {
     british: "英", american: "美", britishPronunciation: "播放英式发音", americanPronunciation: "播放美式发音", localMark: "本地", onlineMark: "在线", structuredSource: "来自 {source} 的结构化释义",
     examples: "双语例句", phrases: "相关短语", simpleYoudao: "简明", collinsYoudao: "柯林斯", collinsMeaning: "柯林斯释义", showMore: "查看更多", showLess: "收起",
     noMatch: "没有找到完全匹配的结果", startWord: "从一个词开始", localEmpty: "可以试试更短的词根，或检查拼写。完整 ECDICT 离线词库已随应用提供。", onlineEmpty: "换一个更具体的英文单词，或切换到本地词典继续查询。",
-    queryFailed: "这次查询没有完成", retry: "再试一次", loading: "正在轻轻翻阅词页…", databasePreparing: "离线词库正在准备中，请稍后再试。", suggestion: "你是否想查询",
+    queryFailed: "这次查询没有完成", retry: "再试一次", loading: "正在轻轻翻阅词页…", databasePreparing: "离线词库正在准备中，请稍后再试。", suggestion: "你是否想查询", inputSuggestions: "输入建议", spellingCorrection: "拼写纠正",
     closeSettings: "关闭设置窗口", appearance: "外观", uiLanguage: "界面语言", chinese: "中文（简体）", english: "English", interfaceTheme: "界面主题", interfaceFont: "界面字体", interfaceScale: "界面缩放", interfaceOpacity: "界面透明度", materialBlur: "材质模糊",
     displayedDictionaries: "显示的词典", defaultFour: "默认 4 个", queryCache: "查询缓存", cacheWords: "{count} 个单词", cacheOff: "关闭", reset: "恢复默认", done: "完成", youdaoNote: "在线内容经结构化提取后呈现；释义以原网页为准。", dictionaryNote: "通过无需 API Key 的 Free Dictionary API 查询。", genericOnlineNote: "在线内容经结构化提取后呈现；释义以原网页为准。",
   },
@@ -120,7 +130,7 @@ const copy = {
     localSourceTitle: "Local", localSourceSubtitle: "ECDICT · Offline first", youdaoSourceTitle: "Youdao", youdaoSourceSubtitle: "Chinese–English",
     dictionarySourceTitle: "Dictionary", dictionarySourceSubtitle: "Free Dictionary API", vocabularySourceTitle: "Vocabulary.com", vocabularySourceSubtitle: "English learning",
     themeRed: "Red", themeOrange: "Orange", themeYellow: "Yellow", themeGreen: "Green", themeCyan: "Cyan", themeBlue: "Blue", themePurple: "Purple", themeViolet: "Violet", themeBlack: "Black",
-    systemDefault: "System default", heroBefore: "Every word,", heroEmphasis: "clearly understood.", heroCopy: "Chinese–English, offline first. A calm, focused desktop dictionary.",
+    systemDefault: "System default", heroBefore: "Every word, ", heroEmphasis: "clearly understood.", heroCopy: "Chinese–English, offline first. A calm, focused desktop dictionary.",
     openSettings: "Open appearance settings", settingsTitle: "Appearance", settingsCopy: "These preferences stay on this device. The theme colour also styles tabs, buttons, and Fluent scrollbars.",
     settingsCaption: "Appearance", lookupAria: "Dictionary lookup", searchPlaceholder: "Enter English for Chinese, or Chinese for English", searchInputAria: "Look up a word", search: "Search", searchHint: "Chinese definition search and English spelling hints",
     selectSource: "Select a dictionary source", footerLocalFirst: "Local-first dictionary", footerLearning: "Designed for unhurried learning", noDefinition: "No definition available", definition: "Definition", wordForms: "Word forms:",
@@ -128,7 +138,7 @@ const copy = {
     british: "UK", american: "US", britishPronunciation: "Play British pronunciation", americanPronunciation: "Play American pronunciation", localMark: "LOCAL", onlineMark: "ONLINE", structuredSource: "Structured definition from {source}",
     examples: "Bilingual examples", phrases: "Related phrases", simpleYoudao: "Concise", collinsYoudao: "Collins", collinsMeaning: "Collins definitions", showMore: "Show more", showLess: "Show less",
     noMatch: "No exact result found", startWord: "Start with a word", localEmpty: "Try a shorter stem or check the spelling. The complete ECDICT offline dictionary is included.", onlineEmpty: "Try a more specific English word, or switch to the local dictionary.",
-    queryFailed: "This lookup did not finish", retry: "Try again", loading: "Turning through the pages…", databasePreparing: "The offline dictionary is getting ready. Please try again shortly.", suggestion: "Did you mean",
+    queryFailed: "This lookup did not finish", retry: "Try again", loading: "Turning through the pages…", databasePreparing: "The offline dictionary is getting ready. Please try again shortly.", suggestion: "Did you mean", inputSuggestions: "Suggestions", spellingCorrection: "Spelling correction",
     closeSettings: "Close settings", appearance: "APPEARANCE", uiLanguage: "Interface language", chinese: "Chinese (Simplified)", english: "English", interfaceTheme: "Interface theme", interfaceFont: "Interface font", interfaceScale: "Interface scale", interfaceOpacity: "Interface opacity", materialBlur: "Material blur",
     displayedDictionaries: "Displayed dictionaries", defaultFour: "4 by default", queryCache: "Query cache", cacheWords: "{count} words", cacheOff: "Off", reset: "Reset", done: "Done", youdaoNote: "Online content is presented after structured extraction; refer to the original page for the source wording.", dictionaryNote: "Queried through the Free Dictionary API with no API key.", genericOnlineNote: "Online content is presented after structured extraction; refer to the original page for the source wording.",
   },
@@ -201,7 +211,7 @@ const state: {
   settings: DisplaySettings;
 } = {
   source: "local",
-  query: "serendipity",
+  query: "",
   pendingSources: new Set(),
   sourceErrors: {},
   sourceResults: {},
@@ -213,6 +223,8 @@ const state: {
 
 let lookupSerial = 0;
 let scrollTimer: number | undefined;
+let inputSuggestionTimer: number | undefined;
+let inputSuggestionSerial = 0;
 const rootNode = document.querySelector<HTMLDivElement>("#app");
 
 if (!rootNode) {
@@ -235,12 +247,13 @@ function cacheLimitLabel(limit: number): string {
 
 root.addEventListener(
   "scroll",
-  () => {
+  (event) => {
+    if (!(event.target instanceof HTMLElement) || !event.target.matches(".content-panel")) return;
     root.classList.add("is-scrolling");
     if (scrollTimer) window.clearTimeout(scrollTimer);
     scrollTimer = window.setTimeout(() => root.classList.remove("is-scrolling"), 720);
   },
-  { passive: true },
+  { capture: true, passive: true },
 );
 
 function loadSettings(): DisplaySettings {
@@ -401,7 +414,7 @@ function applySettings(): void {
   documentRoot.style.setProperty("--ui-scale", state.settings.scale.toFixed(2));
   documentRoot.style.setProperty("--surface-opacity", (state.settings.opacity / 100).toFixed(2));
   documentRoot.style.setProperty("--material-blur", `${state.settings.blur}px`);
-  const defaultFont = isWindows() ? '"Aurora Windows Chinese", Arial, sans-serif' : systemFontStack;
+  const defaultFont = isWindows() ? '"Aurora Windows Chinese", Aptos, Arial, sans-serif' : systemFontStack;
   const font = state.settings.font === SYSTEM_FONT_ID ? defaultFont : `"${state.settings.font.replaceAll('"', "\\\"")}", ${defaultFont}`;
   documentRoot.style.setProperty("--ui-font", font);
   documentRoot.style.setProperty("--word-font", font);
@@ -459,6 +472,79 @@ function isWindows(): boolean {
   return /Win/.test(navigator.platform);
 }
 
+function isEnglishInput(value: string): boolean {
+  return /^[a-z][a-z' -]*$/i.test(value.trim());
+}
+
+function clearInputSuggestions(): void {
+  const panel = document.querySelector<HTMLElement>("#input-suggestions");
+  if (!panel) return;
+  panel.hidden = true;
+  panel.replaceChildren();
+}
+
+function showInputSuggestions(suggestions: LocalSuggestions): void {
+  const panel = document.querySelector<HTMLElement>("#input-suggestions");
+  if (!panel || !suggestions.suggestions.length) {
+    clearInputSuggestions();
+    return;
+  }
+  panel.hidden = false;
+  panel.innerHTML = `
+    ${suggestions.correction ? `<span class="input-suggestions-label">${escapeHtml(t("spellingCorrection"))}</span>` : ""}
+    <div class="input-suggestions-list">
+      ${suggestions.suggestions
+        .map((word) => `<button type="button" data-input-suggestion="${escapeHtml(word)}"><span>${escapeHtml(word)}</span></button>`)
+        .join("")}
+    </div>`;
+  panel.querySelectorAll<HTMLButtonElement>("[data-input-suggestion]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const word = button.dataset.inputSuggestion ?? "";
+      if (!word) return;
+      inputSuggestionSerial += 1;
+      clearInputSuggestions();
+      void lookUp(word);
+    });
+  });
+}
+
+function showSubmittedSpellingSuggestions(): void {
+  const localResult = state.sourceResults.local;
+  if (localResult?.type !== "local" || !localResult.result.suggestions.length) return;
+  showInputSuggestions({
+    suggestions: localResult.result.suggestions,
+    correction: true,
+  });
+}
+
+function scheduleInputSuggestions(rawValue: string): void {
+  if (inputSuggestionTimer) window.clearTimeout(inputSuggestionTimer);
+  const query = rawValue.trim();
+  const serial = ++inputSuggestionSerial;
+  if (!isEnglishInput(query) || query.length < 3) {
+    clearInputSuggestions();
+    return;
+  }
+  inputSuggestionTimer = window.setTimeout(async () => {
+    try {
+      const suggestions = isTauri()
+        ? await invoke<LocalSuggestions>("suggest_local_words", { query })
+        : {
+            suggestions: fallbackLookup.entries
+              .map((entry) => entry.word)
+              .filter((word) => word.startsWith(query.toLowerCase())),
+            correction: false,
+          };
+      if (serial !== inputSuggestionSerial) return;
+      const currentValue = document.querySelector<HTMLInputElement>("#search-input")?.value.trim() ?? "";
+      if (currentValue !== query) return;
+      showInputSuggestions(suggestions);
+    } catch {
+      if (serial === inputSuggestionSerial) clearInputSuggestions();
+    }
+  }, 65);
+}
+
 function escapeHtml(value: string | undefined | null): string {
   return (value ?? "")
     .replaceAll("&", "&amp;")
@@ -502,9 +588,9 @@ function renderWindowControls(): string {
   }
   return `
     <div class="win-controls" aria-label="${escapeHtml(t("titlebarCaption"))}">
-      <button data-window-action="minimise" aria-label="${escapeHtml(t("minimiseWindow"))}">${icon("minus", 15)}</button>
-      <button data-window-action="maximise" aria-label="${escapeHtml(t("maximiseWindow"))}">${icon("square", 13)}</button>
-      <button class="win-close" data-window-action="close" aria-label="${escapeHtml(t("closeWindow"))}">${icon("close", 15)}</button>
+      <button data-window-action="minimise" aria-label="${escapeHtml(t("minimiseWindow"))}">${icon("minus", 13)}</button>
+      <button data-window-action="maximise" aria-label="${escapeHtml(t("maximiseWindow"))}">${icon("square", 11)}</button>
+      <button class="win-close" data-window-action="close" aria-label="${escapeHtml(t("closeWindow"))}">${icon("close", 13)}</button>
     </div>`;
 }
 
@@ -513,7 +599,6 @@ function sourceTabs(): string {
     .map(
       (source) => `
         <button class="source-tab ${state.source === source.id ? "is-active" : ""}" data-source="${source.id}" type="button">
-          <span class="source-tab-icon">${icon(source.icon)}</span>
           <span class="source-tab-title">${escapeHtml(sourceTitle(source))}</span>
           <span class="source-tab-caption">${escapeHtml(sourceSubtitle(source))}</span>
         </button>`,
@@ -614,7 +699,7 @@ function senseCard(group: SenseGroup, contentKey?: string): string {
 }
 
 function contentToggle(contentKey: string, isExpanded: boolean): string {
-  return `<button class="show-more-button" type="button" data-expand-content="${escapeHtml(contentKey)}">${isExpanded ? escapeHtml(t("showLess")) : escapeHtml(t("showMore"))} ${icon("chevron", 14)}</button>`;
+  return `<button class="show-more-button" type="button" data-expand-content="${escapeHtml(contentKey)}">${isExpanded ? escapeHtml(t("showLess")) : escapeHtml(t("showMore"))}</button>`;
 }
 
 function pronunciationRow(
@@ -684,8 +769,13 @@ function entryCard(entry: DictionaryEntry, index: number): string {
 }
 
 function displayHeadword(word: string): string {
-  const trimmed = word.trim();
-  return /^[a-z]/.test(trimmed) ? `${trimmed[0].toUpperCase()}${trimmed.slice(1)}` : trimmed;
+  const dictionaryWord = word.trim();
+  const submittedQuery = state.query.trim();
+  // When the resolved entry is the word the user searched for, preserve the
+  // exact casing they typed instead of imposing dictionary-title casing.
+  return submittedQuery && submittedQuery.toLocaleLowerCase() === dictionaryWord.toLocaleLowerCase()
+    ? submittedQuery
+    : dictionaryWord;
 }
 
 function exampleSection(examples: OnlineExample[], contentKey?: string): string {
@@ -817,7 +907,7 @@ function errorState(error: string): string {
     <div class="error-state">
       <div class="error-icon">${icon("info", 22)}</div>
       <div><h2>${escapeHtml(t("queryFailed"))}</h2><p>${escapeHtml(error)}</p></div>
-      <button class="secondary-button" data-retry>${icon("arrow", 15)} ${escapeHtml(t("retry"))}</button>
+      <button class="secondary-button" data-retry>${escapeHtml(t("retry"))}</button>
     </div>`;
 }
 
@@ -843,14 +933,7 @@ function resultArea(): string {
           ? `<div class="sample-banner">${icon("info", 16)}<span>${escapeHtml(t("databasePreparing"))}</span></div>`
           : ""
       }
-      <div class="entries">${localResult.entries.map(entryCard).join("")}</div>
-      ${
-        localResult.suggestions.length
-          ? `<div class="suggestion-row"><span>${escapeHtml(t("suggestion"))}</span>${localResult.suggestions
-              .map((suggestion) => `<button data-suggestion="${escapeHtml(suggestion)}">${escapeHtml(suggestion)}</button>`)
-              .join("")}</div>`
-          : ""
-      }`;
+      <div class="entries">${localResult.entries.map(entryCard).join("")}</div>`;
   }
   return result?.type === "online" ? `<div class="entries">${onlineCard(result.result)}</div>` : emptyState();
 }
@@ -930,14 +1013,15 @@ function settingsModal(): string {
           </div>
         </section>
         <div class="modal-actions settings-actions">
-          <button class="quiet-button" data-reset-settings>${icon("reset", 15)} ${escapeHtml(t("reset"))}</button>
-          <button class="primary-button" data-close-settings>${escapeHtml(t("done"))} ${icon("check", 16)}</button>
+          <button class="quiet-button" data-reset-settings>${escapeHtml(t("reset"))}</button>
+          <button class="primary-button" data-close-settings>${escapeHtml(t("done"))}</button>
         </div>
       </section>
     </div>`;
 }
 
-function render(): void {
+function render(preserveScroll = true): void {
+  const previousScrollTop = preserveScroll ? (document.querySelector<HTMLElement>(".content-panel")?.scrollTop ?? 0) : 0;
   const active = availableSources().find((source) => source.id === state.source) ?? availableSources()[0];
   root.innerHTML = `
     <div class="app-shell">
@@ -952,6 +1036,7 @@ function render(): void {
         </div>
         ${isMac() ? "" : renderWindowControls()}
       </header>
+      <div class="content-panel">
       <main>
         <section class="hero">
           <div>
@@ -965,7 +1050,8 @@ function render(): void {
           <form class="search-box" id="search-form">
             <span class="search-icon">${icon("search", 22)}</span>
             <input id="search-input" value="${escapeHtml(state.query)}" autocomplete="off" autofocus placeholder="${escapeHtml(t("searchPlaceholder"))}" aria-label="${escapeHtml(t("searchInputAria"))}" />
-            <button class="search-submit" type="submit">${escapeHtml(t("search"))} <span>${icon("search", 16)}</span></button>
+            <button class="search-submit" type="submit">${escapeHtml(t("search"))}</button>
+            <div class="input-suggestions" id="input-suggestions" role="listbox" aria-label="${escapeHtml(t("inputSuggestions"))}" hidden></div>
           </form>
           <div class="search-hint"><span></span><span>${escapeHtml(t("searchHint"))}</span><kbd>↵</kbd></div>
         </section>
@@ -976,8 +1062,11 @@ function render(): void {
         <section class="results-stage" aria-live="polite">${resultArea()}</section>
       </main>
       <footer><span class="footer-pulse"></span><span>${escapeHtml(t("footerLocalFirst"))}</span><i></i><span>${escapeHtml(t("footerLearning"))}</span></footer>
+      </div>
     </div>
     ${settingsModal()}`;
+  const contentPanel = document.querySelector<HTMLElement>(".content-panel");
+  if (contentPanel) contentPanel.scrollTop = previousScrollTop;
   bindEvents();
 }
 
@@ -986,6 +1075,9 @@ function bindEvents(): void {
     event.preventDefault();
     const input = document.querySelector<HTMLInputElement>("#search-input");
     void lookUp(input?.value ?? state.query);
+  });
+  document.querySelector<HTMLInputElement>("#search-input")?.addEventListener("input", (event) => {
+    scheduleInputSuggestions((event.target as HTMLInputElement).value);
   });
 
   document.querySelectorAll<HTMLButtonElement>("[data-source]").forEach((button) => {
@@ -1052,7 +1144,7 @@ function bindEvents(): void {
     state.settings.font = (event.target as HTMLSelectElement).value as FontId;
     applySettings();
     persistSettings();
-    render();
+    render(false);
   });
   document.querySelector<HTMLSelectElement>("#ui-language")?.addEventListener("change", (event) => {
     state.settings.language = (event.target as HTMLSelectElement).value === "en" ? "en" : "zh";
@@ -1082,9 +1174,6 @@ function bindEvents(): void {
     render();
   });
   document.querySelector<HTMLButtonElement>("[data-retry]")?.addEventListener("click", () => void lookUp(state.query));
-  document.querySelectorAll<HTMLButtonElement>("[data-suggestion]").forEach((button) => {
-    button.addEventListener("click", () => void lookUp(button.dataset.suggestion ?? ""));
-  });
   document.querySelectorAll<HTMLButtonElement>("[data-pronounce-word]").forEach((button) => {
     button.addEventListener("click", () => {
       const word = decodeURIComponent(button.dataset.pronounceWord ?? "");
@@ -1166,7 +1255,7 @@ async function ensureSourceLookup(source: SourceId, rawQuery: string): Promise<v
   const serial = lookupSerial;
   delete state.sourceErrors[source];
   state.pendingSources.add(source);
-  render();
+  if (source === state.source) render();
   try {
     const result = await fetchSourceLookup(source, query);
     if (serial !== lookupSerial) return;
@@ -1179,12 +1268,15 @@ async function ensureSourceLookup(source: SourceId, rawQuery: string): Promise<v
   } finally {
     if (serial === lookupSerial) {
       state.pendingSources.delete(source);
-      render();
+      if (source === state.source) render();
+      if (source === "local") showSubmittedSpellingSuggestions();
     }
   }
 }
 
 async function lookUp(rawQuery: string): Promise<void> {
+  inputSuggestionSerial += 1;
+  if (inputSuggestionTimer) window.clearTimeout(inputSuggestionTimer);
   const query = rawQuery.trim();
   const serial = ++lookupSerial;
   if (!query) {
@@ -1194,7 +1286,7 @@ async function lookUp(rawQuery: string): Promise<void> {
     state.sourceErrors = {};
     state.sourceResults = {};
     state.pendingSources = new Set();
-    render();
+    render(false);
     return;
   }
   const sourceIds = availableSources().map((source) => source.id);
@@ -1204,7 +1296,7 @@ async function lookUp(rawQuery: string): Promise<void> {
   state.sourceErrors = {};
   state.sourceResults = {};
   state.pendingSources = new Set(sourceIds);
-  render();
+  render(false);
 
   const cached = await readCachedQuery(query);
   if (serial !== lookupSerial) return;
@@ -1218,6 +1310,7 @@ async function lookUp(rawQuery: string): Promise<void> {
   const missingSources = sourceIds.filter((source) => !state.sourceResults[source]);
   state.pendingSources = new Set(missingSources);
   render();
+  showSubmittedSpellingSuggestions();
 
   const successfulResults: Partial<Record<SourceId, SourceLookupResult>> = {};
   await Promise.all(
@@ -1232,7 +1325,10 @@ async function lookUp(rawQuery: string): Promise<void> {
       } finally {
         if (serial === lookupSerial) {
           state.pendingSources.delete(source);
-          render();
+          // Background dictionaries are preloaded and cached without disturbing
+          // the card the user is currently reading.
+          if (source === state.source) render();
+          if (source === "local") showSubmittedSpellingSuggestions();
         }
       }
     }),
@@ -1245,6 +1341,9 @@ async function lookUp(rawQuery: string): Promise<void> {
 async function initialiseApp(): Promise<void> {
   state.source = defaultSource();
   render();
+  // Prepare the local database and its type-ahead index as soon as the window
+  // is usable, so the first three-character suggestion is not a cold start.
+  if (isTauri()) void invoke<DictionaryStatus>("dictionary_status").catch(() => undefined);
 }
 
 applySettings();

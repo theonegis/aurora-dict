@@ -8,6 +8,7 @@ use std::{
     fs::{self, File},
     io,
     path::{Path, PathBuf},
+    sync::OnceLock,
     time::Duration,
 };
 use tauri::{AppHandle, Manager};
@@ -18,6 +19,11 @@ const BUNDLED_DICTIONARY_ARCHIVE: &str = "resources/ecdict-sqlite-28.zip";
 const BUNDLED_SOURCE_FILE: &str = ".ecdict-source.sqlite3";
 const COMPLETE_DICTIONARY_MINIMUM_ENTRIES: i64 = 100_000;
 const USER_AGENT: &str = "AuroraDictionary/0.1 (desktop dictionary; contact: local-app)";
+
+// Installation validation requires opening the database and counting its rows.
+// Do that once per application process rather than once for every keystroke.
+static BUNDLED_DICTIONARY_READY: OnceLock<PathBuf> = OnceLock::new();
+static WORD_LOOKUP_INDEX_READY: OnceLock<()> = OnceLock::new();
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +47,13 @@ struct LocalLookup {
     entries: Vec<DictionaryEntry>,
     suggestions: Vec<String>,
     sample_data: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LocalSuggestions {
+    suggestions: Vec<String>,
+    correction: bool,
 }
 
 #[derive(Serialize)]
@@ -117,6 +130,15 @@ fn database(app: &AppHandle) -> Result<Connection, String> {
     connection
         .execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
         .map_err(|error| format!("无法初始化本地词库：{error}"))?;
+    if WORD_LOOKUP_INDEX_READY.get().is_none() {
+        connection
+            .execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_stardict_word_nocase
+                 ON stardict(word COLLATE NOCASE);",
+            )
+            .map_err(|error| format!("无法初始化输入建议索引：{error}"))?;
+        let _ = WORD_LOOKUP_INDEX_READY.set(());
+    }
     Ok(connection)
 }
 
@@ -243,6 +265,61 @@ fn lookup_local(app: AppHandle, query: String) -> Result<LocalLookup, String> {
     })
 }
 
+/// Fast type-ahead lookup used while a user is still composing an English
+/// query.  Prefixes keep the usual flow effortless; when the prefix has no
+/// match, the existing edit-distance ranking supplies spelling corrections.
+#[tauri::command]
+fn suggest_local_words(app: AppHandle, query: String) -> Result<LocalSuggestions, String> {
+    let query = normalise_query(&query);
+    if query.chars().count() < 2 || contains_chinese(&query) {
+        return Ok(LocalSuggestions {
+            suggestions: Vec::new(),
+            correction: false,
+        });
+    }
+
+    let connection = database(&app)?;
+    let exact_match = connection
+        .query_row(
+            "SELECT 1 FROM stardict WHERE lower(word) = lower(?1) LIMIT 1",
+            [&query],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|error| format!("无法检查输入词条：{error}"))?
+        .is_some();
+    if exact_match {
+        return Ok(LocalSuggestions {
+            suggestions: Vec::new(),
+            correction: false,
+        });
+    }
+    let mut statement = connection
+        .prepare(
+            "SELECT word FROM stardict
+             WHERE word LIKE ?1 COLLATE NOCASE
+             ORDER BY frq DESC, word COLLATE NOCASE LIMIT 10",
+        )
+        .map_err(|error| format!("无法生成输入建议：{error}"))?;
+    let prefix_matches = statement
+        .query_map([format!("{query}%")], |row| row.get::<_, String>(0))
+        .map_err(|error| format!("无法读取输入建议：{error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法读取输入建议：{error}"))?;
+
+    if !prefix_matches.is_empty() {
+        return Ok(LocalSuggestions {
+            suggestions: prefix_matches,
+            correction: false,
+        });
+    }
+
+    Ok(LocalSuggestions {
+        suggestions: spelling_suggestions(&connection, &query)?,
+        correction: true,
+    })
+}
+
 /// Prefer FTS5 for the normal CJK query path. The LIKE fallback deliberately
 /// remains for short/infix phrases, because dictionary source text may join CJK
 /// characters into a longer FTS token.
@@ -326,7 +403,7 @@ fn spelling_suggestions(connection: &Connection, query: &str) -> Result<Vec<Stri
         Ordering::Equal => left.0.cmp(&right.0),
         order => order,
     });
-    Ok(ranked.into_iter().take(5).map(|(word, _)| word).collect())
+    Ok(ranked.into_iter().take(10).map(|(word, _)| word).collect())
 }
 
 fn levenshtein(left: &str, right: &str) -> usize {
@@ -436,7 +513,14 @@ fn unpack_bundled_dictionary(archive_path: &Path, staging_path: &Path) -> Result
 
 fn ensure_bundled_dictionary(app: &AppHandle) -> Result<(), String> {
     let destination_path = database_path(app)?;
+    if BUNDLED_DICTIONARY_READY
+        .get()
+        .is_some_and(|ready_path| ready_path == &destination_path)
+    {
+        return Ok(());
+    }
     if complete_dictionary_exists(&destination_path) {
+        let _ = BUNDLED_DICTIONARY_READY.set(destination_path);
         return Ok(());
     }
 
@@ -452,6 +536,9 @@ fn ensure_bundled_dictionary(app: &AppHandle) -> Result<(), String> {
         Ok(())
     })();
     let _ = fs::remove_file(&staging_path);
+    if install_result.is_ok() {
+        let _ = BUNDLED_DICTIONARY_READY.set(destination_path);
+    }
     install_result
 }
 
@@ -504,7 +591,11 @@ async fn lookup_online(provider: String, query: String) -> Result<OnlineLookup, 
     match provider.as_str() {
         "youdao" => {
             let source = "有道词典";
-            let url = format!("https://dict.youdao.com/result?word={encoded}&lang=en");
+            // Youdao uses distinct SSR payloads for English and Chinese input.
+            // Requesting the Chinese mode is essential: the English page has no
+            // concise-definition module for Chinese-to-English lookups.
+            let language = if contains_chinese(&query) { "zh" } else { "en" };
+            let url = format!("https://dict.youdao.com/result?word={encoded}&lang={language}");
             let page = fetch_source_page(source, &url).await?;
             let mut result = parse_youdao(&page, &query, &url)?;
             result.source = source.into();
@@ -592,7 +683,12 @@ fn parse_youdao(page: &str, query: &str, url: &str) -> Result<OnlineLookup, Stri
         .clone()
         .or_else(|| uk_phonetic.clone())
         .or_else(|| phonetics.first().cloned());
-    let simple_senses = parse_youdao_senses(&document);
+    let is_chinese_query = contains_chinese(query);
+    let simple_senses = if is_chinese_query {
+        parse_youdao_chinese_translations(page)
+    } else {
+        parse_youdao_senses(&document)
+    };
     let simple_examples = parse_youdao_examples(&document);
     let simple_phrases = parse_youdao_phrases(&document);
     let mut sections = Vec::new();
@@ -605,8 +701,8 @@ fn parse_youdao(page: &str, query: &str, url: &str) -> Result<OnlineLookup, Stri
         });
     }
 
-    let collins = parse_youdao_collins(page);
-    if !collins.senses.is_empty() {
+    let collins = (!is_chinese_query).then(|| parse_youdao_collins(page));
+    if let Some(collins) = collins.filter(|section| !section.senses.is_empty()) {
         sections.push(collins);
     }
 
@@ -621,12 +717,10 @@ fn parse_youdao(page: &str, query: &str, url: &str) -> Result<OnlineLookup, Stri
         pronunciation,
         uk_phonetic,
         us_phonetic,
-        uk_audio: Some(format!(
-            "http://dict.youdao.com/dictvoice?type=1&audio={encoded_word}"
-        )),
-        us_audio: Some(format!(
-            "http://dict.youdao.com/dictvoice?type=0&audio={encoded_word}"
-        )),
+        uk_audio: (!is_chinese_query)
+            .then(|| format!("http://dict.youdao.com/dictvoice?type=1&audio={encoded_word}")),
+        us_audio: (!is_chinese_query)
+            .then(|| format!("http://dict.youdao.com/dictvoice?type=0&audio={encoded_word}")),
         senses: fallback_section.senses.clone(),
         examples: fallback_section.examples.clone(),
         sections,
@@ -675,6 +769,33 @@ fn parse_youdao_senses(document: &Html) -> Vec<OnlineSense> {
         }
     }
     Vec::new()
+}
+
+/// Chinese queries are server-rendered in Youdao's `web_trans` state rather
+/// than the `.simple` DOM module used for English words.  The `value` fields
+/// are the concise English candidate translations; summaries are deliberately
+/// excluded because they are corpus snippets, not definitions.
+fn parse_youdao_chinese_translations(page: &str) -> Vec<OnlineSense> {
+    let Some(marker) = page.find("web_trans:") else {
+        return Vec::new();
+    };
+    let object_start = marker + "web_trans:".len();
+    let Some(web_trans) = balanced_javascript_segment(page, object_start, b'{', b'}') else {
+        return Vec::new();
+    };
+    let mut seen = HashSet::new();
+    let definitions = javascript_string_values(web_trans, "value:")
+        .into_iter()
+        .map(|value| clean_markup(&value))
+        .filter(|value| !value.is_empty() && seen.insert(value.clone()))
+        .take(12)
+        .collect::<Vec<_>>();
+    definitions.is_empty().then(Vec::new).unwrap_or_else(|| {
+        vec![OnlineSense {
+            part_of_speech: "中译英".into(),
+            definitions,
+        }]
+    })
 }
 
 fn parse_youdao_examples(document: &Html) -> Vec<OnlineExample> {
@@ -1257,6 +1378,25 @@ mod tests {
     }
 
     #[test]
+    fn youdao_parser_reads_chinese_to_english_ssr_candidates() {
+        let page = r#"
+          <h1 class="word-head">机缘巧合</h1>
+          <script>
+            window.__NUXT__={wordData:{web_trans:{"web-translation":[
+              {value:"serendipity"},
+              {value:"by chance"},
+              {value:"serendipity"}
+            ]}}};
+          </script>
+        "#;
+        let result = parse_youdao(page, "机缘巧合", "https://example.test").unwrap();
+        assert_eq!(result.senses[0].part_of_speech, "中译英");
+        assert_eq!(result.senses[0].definitions, ["serendipity", "by chance"]);
+        assert!(result.uk_audio.is_none());
+        assert!(result.us_audio.is_none());
+    }
+
+    #[test]
     fn youdao_parser_reads_collins_ssr_state_without_running_script() {
         let page = r#"
           <h1 class="word-head">good</h1>
@@ -1339,6 +1479,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             lookup_local,
+            suggest_local_words,
             lookup_online,
             dictionary_status,
             youdao_is_available

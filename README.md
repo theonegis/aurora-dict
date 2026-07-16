@@ -40,7 +40,7 @@ npm run dev
 
 ## 打包与发布
 
-```bash
+```Shell
 npm run tauri build
 ```
 
@@ -51,6 +51,12 @@ npm run tauri build
 - Linux x64 `.deb` 与 `.rpm`。
 
 工作流默认产生未签名的产物。
+
+macOS下提示：“Aurora Dict”已损坏，无法打开。 你应该将它移到废纸篓，可在终端执行如下命令解决：
+
+```Shell
+xattr -rd com.apple.quarantine "/Applications/Aurora Dict.app"
+```
 
 ## 在线来源说明
 
