@@ -1061,8 +1061,8 @@ function render(preserveScroll = true): void {
         </section>
         <section class="results-stage" aria-live="polite">${resultArea()}</section>
       </main>
-      <footer><span class="footer-pulse"></span><span>${escapeHtml(t("footerLocalFirst"))}</span><i></i><span>${escapeHtml(t("footerLearning"))}</span></footer>
       </div>
+      <footer><span class="footer-pulse"></span><span>${escapeHtml(t("footerLocalFirst"))}</span><i></i><span>${escapeHtml(t("footerLearning"))}</span></footer>
     </div>
     ${settingsModal()}`;
   const contentPanel = document.querySelector<HTMLElement>(".content-panel");
