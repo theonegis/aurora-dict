@@ -17,7 +17,6 @@ src-tauri/gen/
 *.db-shm
 *.sqlite
 *.sqlite3
-src-tauri/resources/ecdict-sqlite-28.zip
 
 # Environment-specific secrets and local release configuration
 .env
