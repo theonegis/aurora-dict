@@ -41,7 +41,13 @@ npm run dev
 
 修改这些配置后需要重新构建应用。用户在设置中自行编辑并保存的提示词仍会优先于内置默认值。
 
-## 离线词库与许可证
+## 许可证
+
+自 v0.1.2 起，Aurora Dict 的代码采用 [PolyForm Noncommercial License 1.0.0](LICENSE)：允许许可证所定义的非商业使用，但传播代码或衍生作品时必须保留许可证和其中的 `Required Notice` 署名声明。商业使用必须事先取得版权所有者的书面授权，详情见 [商业授权说明](COMMERCIAL-LICENSE.md)。此前已经依照 GPL-3.0 发布的版本仍受其原许可证约束。
+
+Aurora Dict 是源代码可用（source-available）软件，并非 OSI 定义的开源软件。
+
+## 离线词库许可证
 
 `src-tauri/resources/ecdict-sqlite-28.zip` 是随安装包分发的 ECDICT SQLite 资源。应用首次启动会将它解压到系统应用数据目录并建立全文索引。完整的 ECDICT 许可证位于 [src-tauri/resources/ECDICT-LICENSE.txt](src-tauri/resources/ECDICT-LICENSE.txt)。
 
@@ -59,11 +65,13 @@ git tag -f -a v0.x.x -m "Aurora Dict v0.x.x"
 git push --force origin v0.x.x
 ```
 
-- macOS ARM64 与 Universal `.dmg`；
-- Windows x64 与 ARM64 NSIS `.exe`；
+- macOS ARM64 与 x64 `.dmg`；
+- Windows x64 NSIS `.exe`；
 - Linux x64 `.deb` 与 `.rpm`。
 
 所有安装包默认包含 llama.cpp 本地推理引擎；Qwen 模型会由用户在设置页按需下载，因此不会增大初始安装包数百 MB。具体构建方式见 [本地 AI 引擎构建说明](docs/offline-ai-build.md)。
+
+Arch Linux 用户包使用 `aurora-dict-bin`，AUR 发布与维护步骤见 [AUR 发布说明](docs/aur-publishing.md)。发布后可通过 `paru -S aurora-dict-bin` 安装。
 
 工作流默认产生未签名的产物。
 

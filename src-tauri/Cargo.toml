@@ -5,6 +5,7 @@ description = "A calm, fast bilingual desktop dictionary"
 authors = ["Aurora Dictionary"]
 edition = "2021"
 rust-version = "1.77.2"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [lib]
 name = "aurora_dict_lib"

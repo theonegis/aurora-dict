@@ -2,7 +2,7 @@
 
 本文说明如何在 **macOS、Windows 与 Linux 本机**将 Aurora Dict 编译为可执行程序和可分发安装包。
 
-> 建议在目标操作系统上构建目标安装包。例如，在 Windows 上构建 Windows NSIS 安装器、在 macOS 上构建 DMG。Windows 交叉编译和 macOS Universal 构建均可行，但前者维护成本更高。
+> 请在目标操作系统上构建对应安装包。当前发布目标仅包括 macOS ARM64/x64、Windows x64 和 Linux x64。
 
 ## 1. 获取源码与离线词库
 
@@ -73,52 +73,34 @@ npm run tauri dev
 xcode-select --install
 ```
 
-确认 Node、Rust 与 Git LFS 已按上文安装。Apple Silicon Mac 默认构建 ARM64；Intel Mac 默认构建 x64。
+确认 Node、Rust 与 Git LFS 已按上文安装。
 
-### 构建本机 DMG
-
-```bash
-npm run tauri build -- --bundles dmg
-```
-
-产物位于：
-
-```text
-src-tauri/target/release/bundle/dmg/
-```
-
-如只需要 `.app`，不生成 DMG：
-
-```bash
-npm run tauri build -- --bundles app
-```
-
-产物位于：
-
-```text
-src-tauri/target/release/bundle/macos/Aurora Dict.app
-```
-
-### 构建 ARM64 或 Universal DMG
-
-在 Apple Silicon Mac 上构建 ARM64：
+### 构建 ARM64 DMG
 
 ```bash
 rustup target add aarch64-apple-darwin
+bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
 npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
 ```
 
-构建同时支持 Intel 和 Apple Silicon 的 Universal 安装包：
-
-```bash
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
-npm run tauri build -- --target universal-apple-darwin --bundles dmg
-```
-
-Universal 产物位于：
+产物位于：
 
 ```text
-src-tauri/target/universal-apple-darwin/release/bundle/dmg/
+src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
+```
+
+### 构建 x64 DMG
+
+```bash
+rustup target add x86_64-apple-darwin
+bash scripts/prepare-llama-sidecar.sh x86_64-apple-darwin
+npm run tauri build -- --target x86_64-apple-darwin --bundles dmg
+```
+
+产物位于：
+
+```text
+src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/
 ```
 
 ### 签名与公证
@@ -147,6 +129,7 @@ git lfs version
 ```powershell
 npm ci
 git lfs pull
+bash scripts/prepare-llama-sidecar.sh x86_64-pc-windows-msvc
 npm run tauri build -- --bundles nsis
 ```
 
@@ -157,23 +140,6 @@ src-tauri\target\release\bundle\nsis\
 ```
 
 其中的 `*-setup.exe` 即 Windows 安装程序。
-
-### 构建 Windows ARM64
-
-请优先在 Windows on ARM 设备或 GitHub Actions 的 ARM runner 上构建：
-
-```powershell
-rustup target add aarch64-pc-windows-msvc
-npm run tauri build -- --target aarch64-pc-windows-msvc --bundles nsis
-```
-
-产物位于：
-
-```text
-src-tauri\target\aarch64-pc-windows-msvc\release\bundle\nsis\
-```
-
-从 macOS 或 Linux 交叉编译 Windows NSIS 安装器需要额外的 `cargo-xwin`、LLVM/LLD、NSIS 及 Windows SDK 文件；除非已有成熟交叉编译环境，否则请使用 Windows 本机或本项目的 GitHub Actions 工作流。
 
 ## 5. Linux
 
@@ -194,6 +160,7 @@ sudo apt install -y \
 
 npm ci
 git lfs pull
+bash scripts/prepare-llama-sidecar.sh x86_64-unknown-linux-gnu
 npm run tauri build -- --bundles deb,rpm
 ```
 
@@ -212,6 +179,7 @@ sudo dnf install -y \
 
 npm ci
 git lfs pull
+bash scripts/prepare-llama-sidecar.sh x86_64-unknown-linux-gnu
 npm run tauri build -- --bundles rpm,deb
 ```
 
@@ -227,6 +195,7 @@ sudo pacman -Syu --needed \
 
 npm ci
 git lfs pull
+bash scripts/prepare-llama-sidecar.sh x86_64-unknown-linux-gnu
 npm run tauri build -- --bundles deb,rpm
 ```
 
@@ -242,6 +211,8 @@ src-tauri/target/release/bundle/rpm/
 ```text
 src-tauri/target/release/aurora-dict
 ```
+
+面向 Arch Linux 用户发布时使用 `aurora-dict-bin` AUR 包，而不是把 deb 或 rpm 直接交给用户。具体步骤见 [AUR 发布说明](docs/aur-publishing.md)。
 
 ## 6. 仅构建可执行文件
 
@@ -288,8 +259,8 @@ git lfs pull
 
 仓库已提供 [`.github/workflows/release.yml`](.github/workflows/release.yml)。它会在推送 `v*` 格式 Git tag 后构建：
 
-- macOS ARM64 与 Universal DMG；
-- Windows x64 与 ARM64 NSIS 安装器；
+- macOS ARM64 与 x64 DMG；
+- Windows x64 NSIS 安装器；
 - Linux x64 的 DEB 与 RPM。
 
 发布新版本前，请确保 `src-tauri/tauri.conf.json` 的 `version` 与 tag 一致：
@@ -307,3 +278,4 @@ git push origin v0.1.0
 - [Tauri 发行与打包](https://v2.tauri.app/distribute/)
 - [Tauri macOS DMG](https://v2.tauri.app/distribute/dmg/)
 - [Tauri Windows 安装器](https://v2.tauri.app/distribute/windows-installer/)
+- [AUR 发布说明](docs/aur-publishing.md)

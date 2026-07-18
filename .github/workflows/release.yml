@@ -64,9 +64,9 @@ jobs:
           - name: ARM64
             args: "--target aarch64-apple-darwin --bundles dmg"
             sidecar_target: aarch64-apple-darwin
-          - name: Universal
-            args: "--target universal-apple-darwin --bundles dmg"
-            sidecar_target: universal-apple-darwin
+          - name: x64
+            args: "--target x86_64-apple-darwin --bundles dmg"
+            sidecar_target: x86_64-apple-darwin
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,19 +90,9 @@ jobs:
           releaseAssetNamePattern: "aurora-dict_[version]_[platform]_[arch]_[bundle][ext]"
 
   windows:
-    name: Windows ${{ matrix.name }}
+    name: Windows x64
     needs: prepare-release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: x64
-            runner: windows-2022
-            sidecar_target: x86_64-pc-windows-msvc
-          - name: ARM64
-            runner: windows-11-arm
-            sidecar_target: aarch64-pc-windows-msvc
-    runs-on: ${{ matrix.runner }}
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,7 +103,7 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
       - run: npm ci
-      - run: bash scripts/prepare-llama-sidecar.sh ${{ matrix.sidecar_target }}
+      - run: bash scripts/prepare-llama-sidecar.sh x86_64-pc-windows-msvc
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}

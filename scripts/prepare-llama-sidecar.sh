@@ -7,9 +7,9 @@ set -euo pipefail
 
 target="${1:-}"
 case "$target" in
-  universal-apple-darwin|aarch64-apple-darwin|x86_64-apple-darwin|x86_64-pc-windows-msvc|aarch64-pc-windows-msvc|x86_64-unknown-linux-gnu) ;;
+  aarch64-apple-darwin|x86_64-apple-darwin|x86_64-pc-windows-msvc|x86_64-unknown-linux-gnu) ;;
   *)
-    echo "Usage: $0 {universal-apple-darwin|aarch64-apple-darwin|x86_64-apple-darwin|x86_64-pc-windows-msvc|aarch64-pc-windows-msvc|x86_64-unknown-linux-gnu}" >&2
+    echo "Usage: $0 {aarch64-apple-darwin|x86_64-apple-darwin|x86_64-pc-windows-msvc|x86_64-unknown-linux-gnu}" >&2
     exit 2
     ;;
 esac
@@ -28,12 +28,16 @@ if [[ ! -d "$source_dir/.git" ]]; then
   git clone --depth 1 --branch b5401 https://github.com/ggml-org/llama.cpp.git "$source_dir"
 fi
 
-cmake_args=( -S "$source_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release )
+cmake_args=(
+  -S "$source_dir"
+  -B "$build_dir"
+  -DCMAKE_BUILD_TYPE=Release
+  -DBUILD_SHARED_LIBS=OFF
+  -DLLAMA_CURL=OFF
+  -DGGML_NATIVE=OFF
+  -DGGML_OPENMP=OFF
+)
 case "$target" in
-  universal-apple-darwin)
-    cmake_args+=( -DCMAKE_OSX_ARCHITECTURES=x86_64\;arm64 -DGGML_METAL=ON )
-    output_name="llama-server-universal-apple-darwin"
-    ;;
   aarch64-apple-darwin)
     cmake_args+=( -DCMAKE_OSX_ARCHITECTURES=arm64 -DGGML_METAL=ON )
     output_name="llama-server-aarch64-apple-darwin"
@@ -44,9 +48,6 @@ case "$target" in
     ;;
   x86_64-pc-windows-msvc)
     output_name="llama-server-x86_64-pc-windows-msvc.exe"
-    ;;
-  aarch64-pc-windows-msvc)
-    output_name="llama-server-aarch64-pc-windows-msvc.exe"
     ;;
   x86_64-unknown-linux-gnu)
     output_name="llama-server-x86_64-unknown-linux-gnu"
@@ -62,6 +63,7 @@ if [[ "$target" == *-pc-windows-msvc ]]; then
   [[ -f "$binary" ]] || binary="$build_dir/bin/llama-server.exe"
 fi
 [[ -f "$binary" ]] || { echo "llama-server was not produced at $binary" >&2; exit 1; }
+
 cp "$binary" "$output_dir/$output_name"
 chmod +x "$output_dir/$output_name" 2>/dev/null || true
 echo "Prepared $output_dir/$output_name"

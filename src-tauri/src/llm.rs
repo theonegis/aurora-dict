@@ -175,18 +175,21 @@ fn target_triple() -> &'static str {
     {
         "x86_64-apple-darwin"
     }
-    #[cfg(all(target_os = "windows", target_arch = "aarch64"))]
-    {
-        "aarch64-pc-windows-msvc"
-    }
     #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
     {
         "x86_64-pc-windows-msvc"
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
     {
         "x86_64-unknown-linux-gnu"
     }
+    #[cfg(not(any(
+        all(target_os = "macos", target_arch = "aarch64"),
+        all(target_os = "macos", target_arch = "x86_64"),
+        all(target_os = "windows", target_arch = "x86_64"),
+        all(target_os = "linux", target_arch = "x86_64")
+    )))]
+    compile_error!("Aurora Dict only supports macOS ARM64/x64, Windows x64, and Linux x64");
 }
 
 fn engine_path(app: &AppHandle) -> Option<PathBuf> {
@@ -203,8 +206,6 @@ fn engine_path(app: &AppHandle) -> Option<PathBuf> {
         ""
     };
     let mut binary_names = vec![format!("llama-server-{}{}", target_triple(), extension)];
-    #[cfg(target_os = "macos")]
-    binary_names.push(format!("llama-server-universal-apple-darwin{extension}"));
     binary_names.push(format!("llama-server{extension}"));
 
     let mut directories = vec![

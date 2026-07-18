@@ -35,9 +35,16 @@
     "active": true,
     "targets": "all",
     "icon": ["icons/128x128.png", "icons/icon.icns", "icons/icon.ico"],
-    "resources": ["resources/ecdict-sqlite-28.zip", "resources/ECDICT-LICENSE.txt"],
+    "resources": {
+      "resources/ecdict-sqlite-28.zip": "resources/ecdict-sqlite-28.zip",
+      "resources/ECDICT-LICENSE.txt": "resources/ECDICT-LICENSE.txt",
+      "../LICENSE": "resources/AURORA-DICT-LICENSE.txt"
+    },
     "externalBin": ["binaries/llama-server"],
     "category": "Education",
-    "shortDescription": "A beautiful, fast bilingual dictionary."
+    "shortDescription": "A beautiful, fast bilingual dictionary.",
+    "copyright": "Copyright (c) 2026 Zhenyu Tan",
+    "license": "PolyForm-Noncommercial-1.0.0",
+    "licenseFile": "../LICENSE"
   }
 }
