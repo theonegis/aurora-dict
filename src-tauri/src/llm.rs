@@ -12,7 +12,7 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Mutex,
+        Mutex, OnceLock,
     },
     time::Duration,
 };
@@ -20,8 +20,21 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 const MODEL_DIRECTORY: &str = "local-llm";
 const DOWNLOAD_EVENT: &str = "llm-download-progress";
-const DICTIONARY_SYSTEM_PROMPT: &str = "你是 Aurora Dict 的离线中英学习词典。用户会提交一个词、短语或极短的中文词组。请仅依据可靠的常见语言知识作答，不编造词源、引文、语料来源或罕见用法。使用简体中文，并严格按以下顺序输出有内容的项目：\n释义：给出最常见的核心义项；\n用法：说明词性、典型搭配或语境；\n例句：给出一条简短双语例句；\n易混：仅在确有常见易混词时说明。\n每项简短，不要寒暄、追问、免责声明、思考过程或 Markdown 表格。";
-const TRANSLATION_SYSTEM_PROMPT: &str = "你是 Aurora Dict 的离线中英翻译器。自动识别输入为中文或英文，并翻译为另一种语言。忠实保留段落、项目符号、数字、专有名词、标点和原文语气；不擅自扩写、解释或改写。只输出译文，不要标题、前缀、注释、Markdown 代码围栏或思考过程。";
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptConfiguration {
+    dictionary_system_prompt: String,
+    translation_system_prompt: String,
+}
+
+fn prompt_configuration() -> &'static PromptConfiguration {
+    static CONFIGURATION: OnceLock<PromptConfiguration> = OnceLock::new();
+    CONFIGURATION.get_or_init(|| {
+        serde_json::from_str(include_str!("../../config/prompts.json"))
+            .expect("config/prompts.json must contain valid Aurora Dict prompts")
+    })
+}
 
 #[derive(Clone, Copy)]
 struct ModelDefinition {
@@ -498,7 +511,10 @@ pub async fn lookup_llm(
     if query.chars().count() > 100 {
         return Err("查询内容过长，请限制在 100 个字符以内。".into());
     }
-    let system_prompt = resolved_system_prompt(system_prompt, DICTIONARY_SYSTEM_PROMPT)?;
+    let system_prompt = resolved_system_prompt(
+        system_prompt,
+        &prompt_configuration().dictionary_system_prompt,
+    )?;
     let path = model_path(&app, model)?;
     if !path.is_file() {
         return Err(format!("{} 尚未下载，请在设置中下载模型。", model.name));
@@ -531,15 +547,33 @@ pub async fn translate_llm(
     if text.chars().count() > 4_000 {
         return Err("翻译文本过长，请限制在 4,000 个字符以内。".into());
     }
-    let system_prompt = resolved_system_prompt(system_prompt, TRANSLATION_SYSTEM_PROMPT)?;
+    let system_prompt = resolved_system_prompt(
+        system_prompt,
+        &prompt_configuration().translation_system_prompt,
+    )?;
     let path = model_path(&app, model)?;
     if !path.is_file() {
         return Err(format!("{} 尚未下载，请在设置中下载模型。", model.name));
     }
     let base_url = ensure_server(&app, &manager, model, &path).await?;
-    let user_prompt = format!("待翻译文本：\n{text}\n\n请直接输出译文。\n/no_think");
-    let translation =
+    let direction = translation_direction(&text);
+    let user_prompt = translation_user_prompt(&text, direction, false);
+    let mut translation =
         complete_local_request(&base_url, &system_prompt, &user_prompt, 1_024).await?;
+    if translation_needs_retry(&text, &translation, direction) {
+        let retry_system = format!(
+            "{system_prompt}\n\n这是严格的跨语言翻译任务。输出必须使用{}，原样返回输入属于错误。",
+            direction.target_language()
+        );
+        let retry_prompt = translation_user_prompt(&text, direction, true);
+        translation =
+            complete_local_request(&base_url, &retry_system, &retry_prompt, 1_024).await?;
+    }
+    if translation_needs_retry(&text, &translation, direction) {
+        return Err(
+            "本地 AI 返回了原文，未完成跨语言翻译。请重试，或在设置中选择更大的本地模型。".into(),
+        );
+    }
     Ok(LlmTranslation {
         source: text,
         translation,
@@ -547,6 +581,100 @@ pub async fn translate_llm(
         model_name: model.name.into(),
         note: "由本地 AI 模型翻译。".into(),
     })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TranslationDirection {
+    ToEnglish,
+    ToChinese,
+}
+
+impl TranslationDirection {
+    fn source_language(self) -> &'static str {
+        match self {
+            Self::ToEnglish => "中文",
+            Self::ToChinese => "英文",
+        }
+    }
+
+    fn target_language(self) -> &'static str {
+        match self {
+            Self::ToEnglish => "英文",
+            Self::ToChinese => "简体中文",
+        }
+    }
+}
+
+fn is_han(character: char) -> bool {
+    matches!(character, '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}' | '\u{f900}'..='\u{faff}')
+}
+
+fn translation_direction(text: &str) -> TranslationDirection {
+    if text.chars().any(is_han) {
+        TranslationDirection::ToEnglish
+    } else {
+        TranslationDirection::ToChinese
+    }
+}
+
+fn translation_user_prompt(text: &str, direction: TranslationDirection, strict: bool) -> String {
+    let strict_instruction = if strict {
+        "上一次错误地复述了原文。这一次必须完成语言转换，绝对不能复制原文。\n"
+    } else {
+        ""
+    };
+    format!(
+        "/no_think\n任务：将下方 <source> 中的{}内容翻译为{}。\n{}只输出{}译文，不要复述原文，不要解释。\n<source>\n{}\n</source>",
+        direction.source_language(),
+        direction.target_language(),
+        strict_instruction,
+        direction.target_language(),
+        text
+    )
+}
+
+fn comparable_translation_text(text: &str) -> String {
+    text.chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+
+fn translation_needs_retry(
+    source: &str,
+    translation: &str,
+    direction: TranslationDirection,
+) -> bool {
+    let source_comparable = comparable_translation_text(source);
+    let translation_comparable = comparable_translation_text(translation);
+    if source_comparable.is_empty() || translation_comparable.is_empty() {
+        return true;
+    }
+    if source_comparable == translation_comparable {
+        return true;
+    }
+    match direction {
+        TranslationDirection::ToEnglish => {
+            source
+                .chars()
+                .filter(|character| is_han(*character))
+                .count()
+                >= 2
+                && translation
+                    .chars()
+                    .filter(|character| character.is_ascii_alphabetic())
+                    .count()
+                    < 2
+        }
+        TranslationDirection::ToChinese => {
+            source
+                .chars()
+                .filter(|character| character.is_ascii_alphabetic())
+                .count()
+                >= 2
+                && !translation.chars().any(is_han)
+        }
+    }
 }
 
 async fn complete_local_request(
@@ -714,8 +842,62 @@ async fn ensure_server(
 #[cfg(test)]
 mod tests {
     use super::{
-        model_definition, model_download_url, resolved_system_prompt, strip_thinking_content,
+        model_definition, model_download_url, prompt_configuration, resolved_system_prompt,
+        strip_thinking_content, translation_direction, translation_needs_retry,
+        translation_user_prompt, TranslationDirection,
     };
+
+    #[test]
+    fn loads_prompts_from_the_shared_configuration() {
+        let configuration = prompt_configuration();
+        assert!(configuration.dictionary_system_prompt.contains("发音："));
+        assert!(configuration
+            .dictionary_system_prompt
+            .contains("固定搭配："));
+        assert!(configuration
+            .translation_system_prompt
+            .contains("禁止原样复述或复制输入"));
+    }
+
+    #[test]
+    fn translation_prompt_uses_an_explicit_target_language() {
+        assert_eq!(
+            translation_direction("你好，我今天辛勤劳动了一天"),
+            TranslationDirection::ToEnglish
+        );
+        assert_eq!(
+            translation_direction("I worked hard today."),
+            TranslationDirection::ToChinese
+        );
+        assert!(
+            translation_user_prompt("你好", TranslationDirection::ToEnglish, false)
+                .contains("中文内容翻译为英文")
+        );
+        assert!(
+            translation_user_prompt("Hello", TranslationDirection::ToChinese, false)
+                .contains("英文内容翻译为简体中文")
+        );
+    }
+
+    #[test]
+    fn rejects_an_untranslated_local_model_response() {
+        let source = "你好，我今天辛勤劳动了一天";
+        assert!(translation_needs_retry(
+            source,
+            source,
+            TranslationDirection::ToEnglish
+        ));
+        assert!(!translation_needs_retry(
+            source,
+            "Hello, I worked hard all day today.",
+            TranslationDirection::ToEnglish
+        ));
+        assert!(!translation_needs_retry(
+            "I worked hard today.",
+            "我今天工作很努力。",
+            TranslationDirection::ToChinese
+        ));
+    }
 
     #[test]
     fn keeps_only_the_final_qwen_answer() {

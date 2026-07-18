@@ -49,10 +49,12 @@ release_url="https://github.com/${repository}/releases/download/v${version}/${as
 package_file="${output_dir}/${asset_name}"
 
 mkdir -p "$output_dir"
-trap 'rm -f "$package_file"' EXIT
-
-echo "Downloading $release_url"
-curl --fail --location --retry 3 --output "$package_file" "$release_url"
+if [[ -f "$package_file" ]]; then
+  echo "Using existing $package_file"
+else
+  echo "Downloading $release_url"
+  curl --fail --location --retry 3 --output "$package_file" "$release_url"
+fi
 if command -v sha256sum >/dev/null 2>&1; then
   checksum="$(sha256sum "$package_file" | awk '{print $1}')"
 else
@@ -90,9 +92,6 @@ package() {
   bsdtar -xf "\$data_archive" -C "\$pkgdir"
 }
 EOF
-
-rm -f "$package_file"
-trap - EXIT
 
 if command -v makepkg >/dev/null 2>&1; then
   (
