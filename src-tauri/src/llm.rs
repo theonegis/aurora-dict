@@ -18,6 +18,9 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager, State};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 const MODEL_DIRECTORY: &str = "local-llm";
 const DOWNLOAD_EVENT: &str = "llm-download-progress";
 
@@ -789,7 +792,8 @@ async fn ensure_server(
         .map_err(|error| format!("无法读取本地 AI 端口：{error}"))?
         .port();
     drop(listener);
-    let child = Command::new(engine)
+    let mut command = Command::new(engine);
+    command
         .args([
             "-m",
             model_path.to_string_lossy().as_ref(),
@@ -806,7 +810,10 @@ async fn ensure_server(
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let child = command
         .spawn()
         .map_err(|error| format!("无法启动本地 AI 引擎：{error}"))?;
     let base_url = format!("http://127.0.0.1:{port}");

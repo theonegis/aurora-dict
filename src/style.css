@@ -151,6 +151,7 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 }
 
 .ui-icon { display: inline-block; width: 1em; height: 1em; font-size: var(--icon-size, 18px); line-height: 1; text-align: center; }
+.window-state-icon { display: block; width: auto; height: auto; overflow: visible; }
 .traffic .ui-icon { opacity: 0; font-size: 8px; transition: opacity .16s ease; }
 .traffic-close .ui-icon, .traffic-minimise .ui-icon { font-size: 8px; }
 .traffic-maximise .ui-icon { font-size: 7px; }
@@ -731,8 +732,8 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 .local-model-section { padding: 13px; background: rgba(var(--accent-rgb), .055); border: 1px solid rgba(var(--accent-rgb), .1); border-radius: 14px; }
 .model-download-source { display: grid; gap: 7px; margin-bottom: 10px; color: var(--soft-ink); font-size: 11px; font-weight: 700; }
 .model-download-source .native-select-wrap, .model-download-source .settings-select { min-height: 42px; }
-.model-download-source-hint { display: inline-flex; align-items: flex-start; gap: 6px; justify-self: start; padding: 6px 8px; color: var(--muted); font-size: 10px; font-weight: 550; line-height: 1.5; background: rgba(var(--accent-rgb), .065); border: 1px solid rgba(var(--accent-rgb), .1); border-radius: 8px; }
-.model-download-source-hint i { margin-top: 2px; color: var(--accent); font-size: 10px; }
+.model-download-source-label { line-height: 1.5; }
+.model-download-source-hint { color: var(--muted); font-size: 10px; font-weight: 550; }
 .local-model-grid { display: grid; gap: 7px; }
 .local-model-option { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; padding: 11px 12px; color: var(--soft-ink); text-align: left; background: rgba(var(--card-rgb), .48); border: 1px solid transparent; border-radius: 12px; transition: background .16s ease, border-color .16s ease, box-shadow .16s ease; }
 .local-model-option:hover { background: rgba(var(--card-rgb), .72); border-color: rgba(var(--accent-rgb), .2); }

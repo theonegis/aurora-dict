@@ -171,12 +171,38 @@ function displayHeadword(word: string, query: string): string {
 }
 
 function WindowControls({ t }: { t: Translator }) {
+  const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri() || isMac()) return;
+    const appWindow = getCurrentWindow();
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+    const syncMaximized = () => {
+      void appWindow.isMaximized().then((value) => {
+        if (!disposed) setMaximized(value);
+      }).catch(() => undefined);
+    };
+    syncMaximized();
+    void appWindow.onResized(syncMaximized).then((unlisten) => {
+      if (disposed) unlisten();
+      else stopListening = unlisten;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  }, []);
+
   const controlWindow = async (action: "close" | "minimise" | "maximise") => {
     if (!isTauri()) return;
     const appWindow = getCurrentWindow();
     if (action === "close") await appWindow.close();
     if (action === "minimise") await appWindow.minimize();
-    if (action === "maximise") await appWindow.toggleMaximize();
+    if (action === "maximise") {
+      await appWindow.toggleMaximize();
+      setMaximized(await appWindow.isMaximized());
+    }
   };
   if (isMac()) return <div className="mac-controls" aria-label={t("titlebarCaption")}>
     <button className="traffic traffic-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="close" size={8} /></button>
@@ -185,7 +211,7 @@ function WindowControls({ t }: { t: Translator }) {
   </div>;
   return <div className="win-controls" aria-label={t("titlebarCaption")}>
     <button onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="minus" size={13} /></button>
-    <button onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name="square" size={11} /></button>
+    <button onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name={maximized ? "restore" : "maximize"} size={12} /></button>
     <button className="win-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="close" size={13} /></button>
   </div>;
 }
@@ -465,7 +491,7 @@ function SettingsPanel({ state, fonts, updateSettings, setTab, setPanel, downloa
     {state.settingsTab === "dictionary" && <section className="settings-module settings-card" role="tabpanel" aria-labelledby="dictionary-section-title"><h3 id="dictionary-section-title" className="settings-module-heading">{t("dictionarySettings")}</h3>
       <section className="settings-section source-settings-section"><div className="settings-label"><span>{t("displayedDictionaries")}</span><small>{t("defaultFour")}</small></div><SourceOrderList settings={settings} updateSettings={updateSettings} t={t} /></section>
       <section className="settings-section local-model-section"><div className="settings-label"><span>{t("localAiModels")}</span><small>{t("localAiModelsHint")}</small></div>
-        <label className="model-download-source" htmlFor="llm-download-source"><span>{t("modelDownloadSource")}</span><div className="native-select-wrap"><select id="llm-download-source" className="settings-select" value={settings.llmDownloadSource} onChange={(event) => updateSettings((current) => ({ ...current, llmDownloadSource: event.target.value === "official" ? "official" : "mirror" }))} aria-label={t("modelDownloadSource")}><option value="mirror">{t("mirrorDownloadSource")}</option><option value="official">{t("officialDownloadSource")}</option></select><i className="native-select-icon fa-solid fa-chevron-down" aria-hidden="true" /></div><small className="model-download-source-hint"><i className="fa-solid fa-circle-info" aria-hidden="true" /><span>{t("mirrorDownloadHint")}</span></small></label>
+        <label className="model-download-source" htmlFor="llm-download-source"><span className="model-download-source-label">{t("modelDownloadSource")} <small className="model-download-source-hint">{t("mirrorDownloadHint")}</small></span><div className="native-select-wrap"><select id="llm-download-source" className="settings-select" value={settings.llmDownloadSource} onChange={(event) => updateSettings((current) => ({ ...current, llmDownloadSource: event.target.value === "official" ? "official" : "mirror" }))} aria-label={t("modelDownloadSource")}><option value="mirror">{t("mirrorDownloadSource")}</option><option value="official">{t("officialDownloadSource")}</option></select><i className="native-select-icon fa-solid fa-chevron-down" aria-hidden="true" /></div></label>
         <div className="local-model-grid" role="radiogroup" aria-label={t("localAiModels")}>{localModels.map((model) => {
           const installed = installation(model.id)?.installed;
           const selected = settings.localModel === model.id;
