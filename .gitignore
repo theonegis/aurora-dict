@@ -10,6 +10,7 @@ pnpm-debug.log*
 # Rust / Tauri build outputs (the generated schemas are reproducible)
 src-tauri/target/
 src-tauri/gen/
+src-tauri/binaries/
 
 # Local dictionary databases and browser storage exports
 *.db

@@ -1,3 +1,6 @@
+mod llm;
+
+use llm::LlmManager;
 use reqwest::Client;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row};
 use scraper::{Html, Selector};
@@ -1461,6 +1464,7 @@ fn apply_macos_window_corner_radius(window: &tauri::WebviewWindow) -> tauri::Res
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_system_fonts::init())
+        .manage(LlmManager::default())
         .setup(|app| {
             ensure_bundled_dictionary(&app.handle()).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
@@ -1490,7 +1494,12 @@ pub fn run() {
             suggest_local_words,
             lookup_online,
             dictionary_status,
-            youdao_is_available
+            youdao_is_available,
+            llm::llm_status,
+            llm::download_llm_model,
+            llm::delete_llm_model,
+            llm::lookup_llm,
+            llm::translate_llm
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora Dictionary");

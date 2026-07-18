@@ -41,6 +41,7 @@ npm run dev
 ## 打包与发布
 
 ```Shell
+bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
 npm run tauri build
 ```
 
@@ -55,6 +56,8 @@ git push --force origin v0.x.x
 - Windows x64 与 ARM64 NSIS `.exe`；
 - Linux x64 `.deb` 与 `.rpm`。
 
+所有安装包默认包含 llama.cpp 本地推理引擎；Qwen 模型会由用户在设置页按需下载，因此不会增大初始安装包数百 MB。具体构建方式见 [本地 AI 引擎构建说明](docs/offline-ai-build.md)。
+
 工作流默认产生未签名的产物。
 
 macOS下提示：“Aurora Dict”已损坏，无法打开。 你应该将它移到废纸篓，可在终端执行如下命令解决：
@@ -62,6 +65,15 @@ macOS下提示：“Aurora Dict”已损坏，无法打开。 你应该将它移
 ```Shell
 xattr -rd com.apple.quarantine "/Applications/Aurora Dict.app"
 ```
+
+## 支持作者
+
+创作不易，如果您觉得该软件对您的工作学习有所帮助，请考虑打赏作者支持他继续完善该工具。您可以使用微信或支付宝扫码支持：
+
+<p>
+  <img src="src-tauri/resources/IMG_2816.JPG" alt="微信付款码" width="260">
+  <img src="src-tauri/resources/IMG_2817.JPG" alt="支付宝付款码" width="260">
+</p>
 
 ## 在线来源说明
 
