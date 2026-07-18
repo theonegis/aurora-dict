@@ -169,6 +169,32 @@ fn model_path(app: &AppHandle, model: ModelDefinition) -> Result<PathBuf, String
     Ok(model_directory(app)?.join(model.filename))
 }
 
+fn is_downloaded_model(path: &Path) -> bool {
+    fs::metadata(path)
+        .map(|metadata| metadata.len() > 0)
+        .unwrap_or(false)
+}
+
+fn resolve_downloaded_model(
+    app: &AppHandle,
+    requested: ModelDefinition,
+) -> Result<(ModelDefinition, PathBuf), String> {
+    let requested_path = model_path(app, requested)?;
+    if is_downloaded_model(&requested_path) {
+        return Ok((requested, requested_path));
+    }
+    for model in MODELS.iter().copied() {
+        if model.id == requested.id {
+            continue;
+        }
+        let path = model_path(app, model)?;
+        if is_downloaded_model(&path) {
+            return Ok((model, path));
+        }
+    }
+    Err(format!("{} 尚未下载，请在设置中下载模型。", requested.name))
+}
+
 fn target_triple() -> &'static str {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
@@ -507,7 +533,7 @@ pub async fn lookup_llm(
     query: String,
     system_prompt: Option<String>,
 ) -> Result<LlmLookup, String> {
-    let model = model_definition(&model_id)?;
+    let requested_model = model_definition(&model_id)?;
     let query = query.split_whitespace().collect::<Vec<_>>().join(" ");
     if query.is_empty() {
         return Err("请输入要查询的词语。".into());
@@ -519,10 +545,7 @@ pub async fn lookup_llm(
         system_prompt,
         &prompt_configuration().dictionary_system_prompt,
     )?;
-    let path = model_path(&app, model)?;
-    if !path.is_file() {
-        return Err(format!("{} 尚未下载，请在设置中下载模型。", model.name));
-    }
+    let (model, path) = resolve_downloaded_model(&app, requested_model)?;
     let base_url = ensure_server(&app, &manager, model, &path).await?;
     let user_prompt = format!("词条：{query}\n请直接给出词典结果。\n/no_think");
     let content = complete_local_request(&base_url, &system_prompt, &user_prompt, 420).await?;
@@ -543,7 +566,7 @@ pub async fn translate_llm(
     text: String,
     system_prompt: Option<String>,
 ) -> Result<LlmTranslation, String> {
-    let model = model_definition(&model_id)?;
+    let requested_model = model_definition(&model_id)?;
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("请输入要翻译的文本。".into());
@@ -555,10 +578,7 @@ pub async fn translate_llm(
         system_prompt,
         &prompt_configuration().translation_system_prompt,
     )?;
-    let path = model_path(&app, model)?;
-    if !path.is_file() {
-        return Err(format!("{} 尚未下载，请在设置中下载模型。", model.name));
-    }
+    let (model, path) = resolve_downloaded_model(&app, requested_model)?;
     let base_url = ensure_server(&app, &manager, model, &path).await?;
     let direction = translation_direction(&text);
     let user_prompt = translation_user_prompt(&text, direction, false);

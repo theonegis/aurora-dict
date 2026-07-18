@@ -494,12 +494,12 @@ function SettingsPanel({ state, fonts, updateSettings, setTab, setPanel, downloa
         <label className="model-download-source" htmlFor="llm-download-source"><span className="model-download-source-label">{t("modelDownloadSource")} <small className="model-download-source-hint">{t("mirrorDownloadHint")}</small></span><div className="native-select-wrap"><select id="llm-download-source" className="settings-select" value={settings.llmDownloadSource} onChange={(event) => updateSettings((current) => ({ ...current, llmDownloadSource: event.target.value === "official" ? "official" : "mirror" }))} aria-label={t("modelDownloadSource")}><option value="mirror">{t("mirrorDownloadSource")}</option><option value="official">{t("officialDownloadSource")}</option></select><i className="native-select-icon fa-solid fa-chevron-down" aria-hidden="true" /></div></label>
         <div className="local-model-grid" role="radiogroup" aria-label={t("localAiModels")}>{localModels.map((model) => {
           const installed = installation(model.id)?.installed;
-          const selected = settings.localModel === model.id;
+          const selected = Boolean(installed && settings.localModel === model.id);
           const progress = state.llmDownload?.modelId === model.id ? state.llmDownload : null;
           const percent = progress?.totalBytes ? clamp(progress.downloadedBytes / progress.totalBytes * 100, 0, 100) : null;
           const error = state.llmActionError?.modelId === model.id ? state.llmActionError.message : "";
-          return <article className={`local-model-option ${selected ? "is-selected" : ""}`} key={model.id}><button className="local-model-select" type="button" role="radio" aria-checked={selected} onClick={() => updateSettings((current) => ({ ...current, localModel: model.id }))}><span className="local-model-choice"><span><b>{model.name}</b><small>{t(model.description)}</small></span>{model.recommended && <i>{t("modelRecommended")}</i>}</span><span className="local-model-footprint">{t(model.footprint)}{installed ? ` · ${t("modelDownloaded")}` : ""}</span></button>
-            {installed ? <button className="local-model-action is-downloaded" type="button" disabled>{t("modelDownloaded")}</button> : <button className="primary-button local-model-action" type="button" disabled={state.llmActionPending} onClick={() => downloadModel(model.id)}>{state.llmActionPending && progress ? (percent === null ? t("connectingDownload") : `${t("downloadingModel")} · ${Math.round(percent)}%`) : t("downloadModel")}</button>}
+          return <article className={`local-model-option ${selected ? "is-selected" : ""}`} key={model.id}><button className="local-model-select" type="button" role="radio" aria-checked={selected} disabled={!installed} onClick={() => updateSettings((current) => ({ ...current, localModel: model.id }))}><span className="local-model-choice"><span><b>{model.name}</b><small>{t(model.description)}</small></span>{model.recommended && <i>{t("modelRecommended")}</i>}</span><span className="local-model-footprint">{t(model.footprint)}{installed ? ` · ${t("modelDownloaded")}` : ""}</span></button>
+            {installed ? (selected ? <button className="local-model-action is-selected-model" type="button" disabled>{t("modelInUse")}</button> : <button className="quiet-button local-model-action" type="button" onClick={() => updateSettings((current) => ({ ...current, localModel: model.id }))}>{t("useModel")}</button>) : <button className="primary-button local-model-action" type="button" disabled={state.llmActionPending} onClick={() => downloadModel(model.id)}>{state.llmActionPending && progress ? (percent === null ? t("connectingDownload") : `${t("downloadingModel")} · ${Math.round(percent)}%`) : t("downloadModel")}</button>}
             {progress && <div className="local-model-progress" aria-live="polite"><div className="local-model-progress-heading"><span>{t("downloadingModel")}</span><strong>{percent === null ? "…" : `${Math.round(percent)}%`}</strong></div><div className={`local-model-progress-track ${percent === null ? "is-indeterminate" : ""}`} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent === null ? undefined : Math.round(percent)}><i style={{ "--download-progress": `${percent ?? 35}%` } as CSSProperties} /></div><small>{progressLabel(progress)}</small></div>}
             {error && <p className="local-model-error" role="alert">{error}</p>}
           </article>;
@@ -596,7 +596,18 @@ export default function App() {
     if (!isTauri()) return;
     try {
       const status = await invoke<LlmStatus>("llm_status");
-      setState((current) => ({ ...current, llmStatus: status }));
+      const selectedInstalled = status.models.some((model) => model.modelId === stateRef.current.settings.localModel && model.installed);
+      const fallbackModel = selectedInstalled ? null : status.models.find((model) => model.installed)?.modelId;
+      if (fallbackModel) setSettingsSaved(false);
+      setState((current) => {
+        if (!fallbackModel || status.models.some((model) => model.modelId === current.settings.localModel && model.installed)) return { ...current, llmStatus: status };
+        const settings = { ...current.settings, localModel: fallbackModel };
+        const sourceResults = { ...current.sourceResults };
+        const sourceErrors = { ...current.sourceErrors };
+        delete sourceResults.local_llm;
+        delete sourceErrors.local_llm;
+        return { ...current, settings, llmStatus: status, sourceResults, sourceErrors, llmActionError: null, translationResult: null, translationError: "" };
+      });
     } catch {
       setState((current) => ({ ...current, llmStatus: null }));
     }
@@ -741,11 +752,12 @@ export default function App() {
     setState((current) => ({ ...current, llmActionPending: true, llmDownload: { modelId, downloadedBytes: 0, complete: false }, llmActionError: null }));
     try {
       await invoke("download_llm_model", { modelId, downloadSource: snapshot.settings.llmDownloadSource });
+      updateSettings((current) => ({ ...current, localModel: modelId }));
       await loadLlmStatus();
     } catch (error) {
       setState((current) => ({ ...current, llmActionError: { modelId, message: error instanceof Error ? error.message : String(error) } }));
     } finally { setState((current) => ({ ...current, llmActionPending: false, llmDownload: null })); }
-  }, [loadLlmStatus]);
+  }, [loadLlmStatus, updateSettings]);
 
   const resetSettings = useCallback(() => {
     const settings = cloneDefaultSettings();
