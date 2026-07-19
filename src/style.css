@@ -151,14 +151,12 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 }
 
 .ui-icon { display: inline-block; width: 1em; height: 1em; font-size: var(--icon-size, 18px); line-height: 1; text-align: center; }
-.window-state-icon { display: block; width: auto; height: auto; overflow: visible; }
-.traffic .ui-icon { opacity: 0; font-size: 8px; transition: opacity .16s ease; }
-.traffic-close .ui-icon, .traffic-minimise .ui-icon { font-size: 8px; }
-.traffic-maximise .ui-icon { font-size: 7px; }
+.window-state-icon, .traffic-symbol { display: block; width: auto; height: auto; overflow: visible; }
+.traffic .ui-icon { opacity: 0; transition: opacity .16s ease; }
 .mac-controls:hover .traffic .ui-icon { opacity: 1; }
 .traffic-close { background: #ff5f57; }
 .traffic-minimise { background: #ffbd2e; }
-.traffic-maximise { background: #28c840; }
+.traffic-maximise { color: rgba(0, 76, 30, .88); background: #28c840; }
 
 .win-controls {
   gap: 2px;
@@ -618,15 +616,14 @@ footer i { width: 1px; height: 10px; margin: 0 3px; background: rgba(109,102,135
   font-size: 14px;
   font-weight: 720;
   letter-spacing: .02em;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 94%, white 6%), var(--accent-deep));
-  border: 1px solid rgba(255,255,255,.25);
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 86%, var(--accent-deep) 14%));
+  border: 1px solid rgba(255,255,255,.16);
   border-radius: 9px;
-  box-shadow: inset 0 1px rgba(255,255,255,.22), inset 0 -1px rgba(35,30,74,.1), 0 2px 5px rgba(var(--accent-rgb), .2);
+  box-shadow: inset 0 -1px rgba(35,30,74,.07), 0 2px 4px rgba(var(--accent-rgb), .16);
   text-shadow: none;
 }
-.search-submit::before { position: absolute; inset: 0 7px auto; height: 1px; content: ""; background: rgba(255,255,255,.3); pointer-events: none; }
-.search-submit:hover { filter: brightness(1.025); box-shadow: inset 0 1px rgba(255,255,255,.25), inset 0 -1px rgba(35,30,74,.1), 0 3px 7px rgba(var(--accent-rgb), .23); transform: none; }
-.search-submit:active { filter: brightness(.97); box-shadow: inset 0 1px 2px rgba(35,30,74,.16), 0 1px 3px rgba(var(--accent-rgb), .16); transform: translateY(.5px); }
+.search-submit:hover { filter: brightness(1.02); box-shadow: inset 0 -1px rgba(35,30,74,.08), 0 3px 6px rgba(var(--accent-rgb), .2); transform: none; }
+.search-submit:active { filter: brightness(.97); box-shadow: inset 0 1px 2px rgba(35,30,74,.13), 0 1px 3px rgba(var(--accent-rgb), .13); transform: translateY(.5px); }
 .win-controls button { color: var(--soft-ink); }
 .hero h1 em { color: var(--accent); background: linear-gradient(102deg, var(--accent-deep), var(--accent-alt)); -webkit-background-clip: text; background-clip: text; }
 .eyebrow, .search-icon, .sense-card header, .settings-label small { color: var(--accent); }

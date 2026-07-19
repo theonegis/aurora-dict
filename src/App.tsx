@@ -205,14 +205,14 @@ function WindowControls({ t }: { t: Translator }) {
     }
   };
   if (isMac()) return <div className="mac-controls" aria-label={t("titlebarCaption")}>
-    <button className="traffic traffic-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="close" size={8} /></button>
-    <button className="traffic traffic-minimise" onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="minus" size={8} /></button>
-    <button className="traffic traffic-maximise" onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name="macZoom" size={8} /></button>
+    <button className="traffic traffic-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="macClose" size={8} /></button>
+    <button className="traffic traffic-minimise" onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="macMinimize" size={8} /></button>
+    <button className="traffic traffic-maximise" onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name="macZoom" size={9} /></button>
   </div>;
   return <div className="win-controls" aria-label={t("titlebarCaption")}>
-    <button onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="minus" size={13} /></button>
+    <button onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="windowMinimize" size={12} /></button>
     <button onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name={maximized ? "restore" : "maximize"} size={12} /></button>
-    <button className="win-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="close" size={13} /></button>
+    <button className="win-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="windowClose" size={12} /></button>
   </div>;
 }
 
