@@ -35,6 +35,7 @@ export const QUERY_CACHE_DATABASE = "aurora-dictionary-query-cache";
 export const QUERY_CACHE_STORE = "query-results";
 export const DEFAULT_CACHE_LIMIT = 100;
 export const CACHE_LIMIT_OPTIONS = [50, 100, 200, 500] as const;
+export const MAX_ENABLED_SOURCES = 4;
 export const DEFAULT_DICTIONARY_SYSTEM_PROMPT = promptConfiguration.dictionarySystemPrompt;
 export const DEFAULT_TRANSLATION_SYSTEM_PROMPT = promptConfiguration.translationSystemPrompt;
 export const LEGACY_DICTIONARY_SYSTEM_PROMPTS: readonly string[] = promptConfiguration.legacyDictionarySystemPrompts;

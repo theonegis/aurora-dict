@@ -10,6 +10,7 @@ import {
   CACHE_LIMIT_OPTIONS,
   DEFAULT_DICTIONARY_SYSTEM_PROMPT,
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
+  MAX_ENABLED_SOURCES,
   SYSTEM_FONT_ID,
   copy,
   fallbackLookup,
@@ -367,7 +368,7 @@ function DictionaryPanel({ state, activeSources, inputValue, setInputValue, sugg
     <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
       {suggestions && suggestions.suggestions.length > 0 && <div className="input-suggestions" role="listbox" aria-label={t("inputSuggestions")}>{suggestions.correction && <span className="input-suggestions-label">{t("spellingCorrection")}</span>}<div className="input-suggestions-list">{suggestions.suggestions.map((word) => <button type="button" key={word} onClick={() => submit(word)}><span>{word}</span></button>)}</div></div>}
     </form><div className="search-hint"><span /><span>{t("searchHint")}</span><kbd><i className="fa-solid fa-turn-down" aria-hidden="true" /></kbd></div></section>
-    <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher">{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
+    <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher" style={{ "--source-count": activeSources.length } as CSSProperties}>{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
       <div className="active-source-line"><span className="active-dot" /><span>{t(active.title)}</span><i /><span>{t(active.subtitle)}</span></div></section>
     <section className="results-stage" aria-live="polite"><ResultStage state={state} retry={retry} toggleExpanded={toggleExpanded} setYoudaoSection={setYoudaoSection} t={t} /></section>
   </>;
@@ -450,14 +451,20 @@ function SourceOrderList({ settings, updateSettings, t }: { settings: DisplaySet
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", finish);
   };
+  const sourceLimitReached = settings.enabledSources.length >= MAX_ENABLED_SOURCES;
   return <div className="source-settings-grid">{settings.sourceOrder.map((sourceId) => {
     const source = sources.find((item) => item.id === sourceId);
     if (!source) return null;
     const enabled = settings.enabledSources.includes(sourceId);
-    return <label className={`source-setting-option ${dragOver === sourceId ? "is-drag-over" : ""}`} data-source-order={sourceId} key={sourceId}
+    const disabled = !enabled && sourceLimitReached;
+    return <label className={`source-setting-option ${dragOver === sourceId ? "is-drag-over" : ""} ${disabled ? "is-disabled" : ""}`} data-source-order={sourceId} key={sourceId}
       onDragOver={(event) => { if (draggedSource.current && draggedSource.current !== sourceId) { event.preventDefault(); dragTarget.current = sourceId; setDragOver(sourceId); } }}
       onDrop={(event) => { event.preventDefault(); if (draggedSource.current) reorder(draggedSource.current, sourceId); draggedSource.current = null; dragTarget.current = null; setDragOver(null); }}>
-      <input type="checkbox" checked={enabled} onChange={(event) => updateSettings((current) => ({ ...current, enabledSources: event.target.checked ? [...new Set([...current.enabledSources, sourceId])] : current.enabledSources.filter((item) => item !== sourceId) }))} />
+      <input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => updateSettings((current) => {
+        if (!event.target.checked) return { ...current, enabledSources: current.enabledSources.filter((item) => item !== sourceId) };
+        if (current.enabledSources.includes(sourceId) || current.enabledSources.length >= MAX_ENABLED_SOURCES) return current;
+        return { ...current, enabledSources: [...current.enabledSources, sourceId] };
+      })} />
       <span className="source-setting-check"><Icon name="check" size={13} /></span><span><b>{t(source.title)}</b><small>{t(source.subtitle)}</small></span>
       <span className="source-order-grip" role="button" draggable tabIndex={0} aria-label={t("defaultFour")}
         onDragStart={(event) => { draggedSource.current = sourceId; event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", sourceId); }}
@@ -538,7 +545,7 @@ async function fetchSourceLookup(source: SourceId, query: string, settings: Disp
 
 function activeSourcesFor(settings: DisplaySettings) {
   const active = settings.sourceOrder.map((id) => sources.find((source) => source.id === id)).filter((source): source is (typeof sources)[number] => Boolean(source && settings.enabledSources.includes(source.id)));
-  return active.length ? active : [sources[0]];
+  return (active.length ? active : [sources[0]]).slice(0, MAX_ENABLED_SOURCES);
 }
 
 export default function App() {

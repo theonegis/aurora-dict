@@ -4,6 +4,7 @@ import {
   DEFAULT_TRANSLATION_SYSTEM_PROMPT,
   LEGACY_DICTIONARY_SYSTEM_PROMPTS,
   LEGACY_TRANSLATION_SYSTEM_PROMPTS,
+  MAX_ENABLED_SOURCES,
   QUERY_CACHE_DATABASE,
   QUERY_CACHE_STORE,
   SETTINGS_STORAGE_KEY,
@@ -41,12 +42,12 @@ export function loadSettings(): DisplaySettings {
       ? storedTranslationPrompt
       : DEFAULT_TRANSLATION_SYSTEM_PROMPT;
     const storedSources = Array.isArray(stored.enabledSources)
-      ? stored.enabledSources.filter((source): source is SourceId => sources.some((item) => item.id === source))
+      ? stored.enabledSources.filter((source, index): source is SourceId => sources.some((item) => item.id === source) && stored.enabledSources!.indexOf(source) === index).slice(0, MAX_ENABLED_SOURCES)
       : [...defaultSettings.enabledSources];
     const legacyDefaultSources: SourceId[] = ["local", "youdao", "dictionary", "vocabulary"];
     const enabledSources = legacyDefaultSources.every((source) => storedSources.includes(source)) && storedSources.length === legacyDefaultSources.length
       ? [...defaultSettings.enabledSources]
-      : storedSources;
+      : storedSources.slice(0, MAX_ENABLED_SOURCES);
     const storedOrder = Array.isArray(stored.sourceOrder)
       ? stored.sourceOrder.filter((source, index): source is SourceId => sources.some((item) => item.id === source) && stored.sourceOrder!.indexOf(source) === index)
       : [];
@@ -65,7 +66,8 @@ export function cloneDefaultSettings(): DisplaySettings {
 }
 
 export function persistSettings(settings: DisplaySettings): void {
-  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+  const enabledSources = [...new Set(settings.enabledSources)].slice(0, MAX_ENABLED_SOURCES);
+  window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ ...settings, enabledSources: enabledSources.length ? enabledSources : ["local"] }));
 }
 
 function requestResult<T>(request: IDBRequest<T>): Promise<T> {
