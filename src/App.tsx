@@ -3,6 +3,7 @@ import type { CSSProperties, FormEvent, MouseEvent as ReactMouseEvent, PointerEv
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { readText as readClipboardText, writeText as writeClipboardText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getSystemFonts } from "tauri-plugin-system-fonts-api";
 import { Icon } from "./Icon";
@@ -122,6 +123,10 @@ function formatText(t: Translator, key: CopyKey, values: Record<string, string>)
 
 interface SelectionMenuState {
   text: string;
+  lookupText: string;
+  input: HTMLInputElement | HTMLTextAreaElement | null;
+  selectionStart: number;
+  selectionEnd: number;
   x: number;
   y: number;
 }
@@ -131,23 +136,50 @@ function normaliseLookupSelection(value: string): string {
   return text.length > 0 && text.length <= 120 ? text : "";
 }
 
-function selectedTextInSurface(target: EventTarget | null, surface: HTMLElement): string {
+function selectionContextInSurface(target: EventTarget | null, surface: HTMLElement): Pick<SelectionMenuState, "text" | "lookupText" | "input" | "selectionStart" | "selectionEnd"> {
   if (target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && ["search", "text"].includes(target.type))) {
     const start = target.selectionStart ?? 0;
     const end = target.selectionEnd ?? 0;
-    return start === end ? "" : normaliseLookupSelection(target.value.slice(start, end));
+    const text = start === end ? "" : target.value.slice(start, end);
+    return { text, lookupText: normaliseLookupSelection(text), input: target, selectionStart: start, selectionEnd: end };
   }
-  if (target instanceof Element && target.closest("button, select, option")) return "";
+  const empty = { text: "", lookupText: "", input: null, selectionStart: 0, selectionEnd: 0 };
+  if (target instanceof Element && target.closest("button, select, option")) return empty;
   const selection = window.getSelection();
-  if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode || !surface.contains(selection.anchorNode) || !surface.contains(selection.focusNode)) return "";
-  return normaliseLookupSelection(selection.toString());
+  if (!selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode || !surface.contains(selection.anchorNode) || !surface.contains(selection.focusNode)) return empty;
+  const text = selection.toString();
+  return { ...empty, text, lookupText: normaliseLookupSelection(text) };
 }
 
-function SelectionLookupMenu({ menu, lookup, t }: { menu: SelectionMenuState; lookup: (text: string) => void; t: Translator }) {
+async function copyTextToClipboard(text: string): Promise<void> {
+  if (isTauri()) {
+    await writeClipboardText(text);
+    return;
+  }
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const fallback = document.createElement("textarea");
+  fallback.value = text;
+  fallback.style.position = "fixed";
+  fallback.style.opacity = "0";
+  document.body.append(fallback);
+  fallback.select();
+  document.execCommand("copy");
+  fallback.remove();
+}
+
+async function pasteTextFromClipboard(): Promise<string> {
+  if (isTauri()) return readClipboardText();
+  return navigator.clipboard?.readText ? navigator.clipboard.readText() : "";
+}
+
+function SelectionLookupMenu({ menu, copySelection, lookup, paste, t }: { menu: SelectionMenuState; copySelection: (text: string) => void; lookup: (text: string) => void; paste: (menu: SelectionMenuState) => void; t: Translator }) {
   return <div className="selection-lookup-menu" role="menu" style={{ left: menu.x, top: menu.y }} onContextMenu={(event) => event.preventDefault()}>
-    <button type="button" role="menuitem" autoFocus onClick={() => lookup(menu.text)} title={formatText(t, "lookupSelection", { text: menu.text })}>
-      <i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><span>{formatText(t, "lookupSelection", { text: menu.text })}</span>
-    </button>
+    {menu.text && <button type="button" role="menuitem" autoFocus onClick={() => copySelection(menu.text)}><i className="fa-solid fa-copy" aria-hidden="true" /><span>{t("contextCopy")}</span></button>}
+    {menu.lookupText && <button type="button" role="menuitem" autoFocus={!menu.text} onClick={() => lookup(menu.lookupText)}><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><span>{t("contextQuery")}</span></button>}
+    {menu.input && <button type="button" role="menuitem" autoFocus={!menu.text && !menu.lookupText} onClick={() => paste(menu)}><i className="fa-solid fa-paste" aria-hidden="true" /><span>{t("contextPaste")}</span></button>}
   </div>;
 }
 
@@ -780,18 +812,39 @@ export default function App() {
   }, []);
 
   const openSelectionMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
-    const text = selectedTextInSurface(event.target, event.currentTarget);
-    if (!text) { setSelectionMenu(null); return; }
+    const context = selectionContextInSurface(event.target, event.currentTarget);
+    if (!context.text && !context.input) { setSelectionMenu(null); return; }
     event.preventDefault();
     const target = event.target instanceof Element ? event.target : event.currentTarget;
     const rect = target.getBoundingClientRect();
     const anchorX = event.clientX > 0 ? event.clientX : rect.left + 16;
     const anchorY = event.clientY > 0 ? event.clientY : rect.bottom;
+    const itemCount = Number(Boolean(context.text)) + Number(Boolean(context.lookupText)) + Number(Boolean(context.input));
     setSelectionMenu({
-      text,
+      ...context,
       x: clamp(anchorX, 8, Math.max(8, window.innerWidth - 248)),
-      y: clamp(anchorY, 8, Math.max(8, window.innerHeight - 56)),
+      y: clamp(anchorY, 8, Math.max(8, window.innerHeight - itemCount * 38 - 12)),
     });
+  }, []);
+
+  const copySelection = useCallback((text: string) => {
+    setSelectionMenu(null);
+    void copyTextToClipboard(text).catch(() => undefined);
+  }, []);
+
+  const pasteSelection = useCallback((menu: SelectionMenuState) => {
+    setSelectionMenu(null);
+    void pasteTextFromClipboard().then((clipboardText) => {
+      const input = menu.input;
+      if (!input?.isConnected || !clipboardText) return;
+      const start = clamp(menu.selectionStart, 0, input.value.length);
+      const end = clamp(menu.selectionEnd, start, input.value.length);
+      const available = input.maxLength > 0 ? Math.max(0, input.maxLength - (input.value.length - (end - start))) : clipboardText.length;
+      const insertion = clipboardText.slice(0, available);
+      input.focus();
+      input.setRangeText(insertion, start, end, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }).catch(() => undefined);
   }, []);
 
   const lookupSelection = useCallback((text: string) => {
@@ -808,9 +861,9 @@ export default function App() {
     scrollTimer.current = window.setTimeout(() => root?.classList.remove("is-scrolling"), 720);
   };
 
-  return <div className="app-shell"><TitleBar t={t} /><div className="content-panel" onScroll={handleScroll}><main><Hero panel={state.panel} setPanel={(panel) => setState((current) => ({ ...current, panel }))} t={t} />
-    {state.panel === "dictionary" && <div className="selection-lookup-surface" onContextMenu={openSelectionMenu}><DictionaryPanel state={state} activeSources={activeSources} inputValue={inputValue} setInputValue={setInputValue} suggestions={suggestions} submit={(value) => void submitLookup(value)} selectSource={(source) => setState((current) => ({ ...current, source, youdaoSection: "simple", expandedContent: new Set() }))} ensureSource={(source) => void ensureSource(source)} retry={() => void submitLookup(state.query)} toggleExpanded={(key) => setState((current) => { const expanded = new Set(current.expandedContent); if (expanded.has(key)) expanded.delete(key); else expanded.add(key); return { ...current, expandedContent: expanded }; })} setYoudaoSection={(youdaoSection) => setState((current) => ({ ...current, youdaoSection }))} t={t} /></div>}
-    {state.panel === "translation" && <div className="selection-lookup-surface" onContextMenu={openSelectionMenu}><TranslationPanel state={state} setInput={(translationInput) => setState((current) => ({ ...current, translationInput }))} submit={() => void translate()} t={t} /></div>}
+  return <div className="app-shell"><TitleBar t={t} /><div className="content-panel" onScroll={handleScroll}><main onContextMenu={openSelectionMenu}><Hero panel={state.panel} setPanel={(panel) => setState((current) => ({ ...current, panel }))} t={t} />
+    {state.panel === "dictionary" && <div className="selection-lookup-surface"><DictionaryPanel state={state} activeSources={activeSources} inputValue={inputValue} setInputValue={setInputValue} suggestions={suggestions} submit={(value) => void submitLookup(value)} selectSource={(source) => setState((current) => ({ ...current, source, youdaoSection: "simple", expandedContent: new Set() }))} ensureSource={(source) => void ensureSource(source)} retry={() => void submitLookup(state.query)} toggleExpanded={(key) => setState((current) => { const expanded = new Set(current.expandedContent); if (expanded.has(key)) expanded.delete(key); else expanded.add(key); return { ...current, expandedContent: expanded }; })} setYoudaoSection={(youdaoSection) => setState((current) => ({ ...current, youdaoSection }))} t={t} /></div>}
+    {state.panel === "translation" && <div className="selection-lookup-surface"><TranslationPanel state={state} setInput={(translationInput) => setState((current) => ({ ...current, translationInput }))} submit={() => void translate()} t={t} /></div>}
     {state.panel === "settings" && <SettingsPanel state={state} fonts={fonts} updateSettings={updateSettings} setTab={(settingsTab) => setState((current) => ({ ...current, settingsTab }))} setPanel={(panel) => setState((current) => ({ ...current, panel }))} downloadModel={(model) => void downloadModel(model)} resetSettings={resetSettings} saveSettings={saveSettings} settingsSaved={settingsSaved} t={t} />}
-  </main></div>{selectionMenu && <SelectionLookupMenu menu={selectionMenu} lookup={lookupSelection} t={t} />}<footer><span className="footer-pulse" /><span>{t("footerLocalFirst")}</span><i /><span>{t("footerLearning")}</span></footer></div>;
+  </main></div>{selectionMenu && <SelectionLookupMenu menu={selectionMenu} copySelection={copySelection} lookup={lookupSelection} paste={pasteSelection} t={t} />}<footer><span className="footer-pulse" /><span>{t("footerLocalFirst")}</span><i /><span>{t("footerLearning")}</span></footer></div>;
 }
