@@ -15,7 +15,7 @@ Options:
   -h, --help     Show this help.
 
 Example:
-  scripts/generate-aur-package.sh --repo theonegis/aurora-dict --version 0.1.2
+  scripts/generate-aur-package.sh --repo theonegis/aurora-dict --version 0.1.3
 EOF
 }
 

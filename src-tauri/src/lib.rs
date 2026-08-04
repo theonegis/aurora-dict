@@ -1462,7 +1462,16 @@ fn apply_macos_window_corner_radius(window: &tauri::WebviewWindow) -> tauri::Res
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(
+        tauri_plugin_window_state::Builder::new()
+            .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE)
+            .build(),
+    );
+
+    builder
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_system_fonts::init())
@@ -1498,6 +1507,7 @@ pub fn run() {
             dictionary_status,
             youdao_is_available,
             llm::llm_status,
+            llm::prepare_llm,
             llm::download_llm_model,
             llm::delete_llm_model,
             llm::lookup_llm,

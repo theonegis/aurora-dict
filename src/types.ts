@@ -82,6 +82,7 @@ export interface LlmLookup {
   content: string;
   note: string;
   promptFingerprint?: string;
+  performance?: LlmPerformance;
 }
 
 export interface LlmTranslation {
@@ -90,6 +91,35 @@ export interface LlmTranslation {
   modelId: LocalModelId;
   modelName: string;
   note: string;
+  performance?: LlmPerformance;
+}
+
+export interface LlmPerformance {
+  coldStart: boolean;
+  startupMs: number;
+  firstTokenMs: number;
+  totalMs: number;
+  promptTokens?: number;
+  generatedTokens?: number;
+  tokensPerSecond?: number;
+}
+
+export interface LlmPrepareResult {
+  modelId: LocalModelId;
+  modelName: string;
+  coldStart: boolean;
+  startupMs: number;
+}
+
+export interface LlmStreamUpdate {
+  requestId: string;
+  operation: "lookup" | "translation";
+  modelId: LocalModelId;
+  modelName: string;
+  content: string;
+  done: boolean;
+  reset: boolean;
+  performance?: LlmPerformance;
 }
 
 export interface LlmModelStatus {

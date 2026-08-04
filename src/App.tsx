@@ -32,7 +32,10 @@ import type {
   FontId,
   LlmLookup,
   LlmModelStatus,
+  LlmPerformance,
+  LlmPrepareResult,
   LlmStatus,
+  LlmStreamUpdate,
   LlmTranslation,
   LocalModelId,
   LocalSuggestions,
@@ -119,6 +122,26 @@ type Translator = (key: CopyKey) => string;
 
 function formatText(t: Translator, key: CopyKey, values: Record<string, string>): string {
   return Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), t(key));
+}
+
+function llmRequestId(operation: "lookup" | "translation"): string {
+  return `${operation}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 1_000) return `${Math.max(0, Math.round(milliseconds))} ms`;
+  return `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`;
+}
+
+function LlmPerformanceLine({ performance, t }: { performance?: LlmPerformance; t: Translator }) {
+  if (!performance) return null;
+  const items = [
+    performance.coldStart && performance.startupMs > 0 ? `${t("llmColdStart")} ${formatDuration(performance.startupMs)}` : "",
+    `${t("llmFirstToken")} ${formatDuration(performance.firstTokenMs)}`,
+    `${t("llmTotalTime")} ${formatDuration(performance.totalMs)}`,
+    performance.tokensPerSecond ? `${performance.tokensPerSecond.toFixed(1)} token/s` : "",
+  ].filter(Boolean);
+  return <div className="llm-performance"><i className="fa-solid fa-gauge-high" aria-hidden="true" /><span>{items.join(" · ")}</span></div>;
 }
 
 interface SelectionMenuState {
@@ -365,10 +388,10 @@ function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, ex
   </section>;
 }
 
-function LlmCard({ result, query, t }: { result: LlmLookup; query: string; t: Translator }) {
+function LlmCard({ result, query, streaming, t }: { result: LlmLookup; query: string; streaming: boolean; t: Translator }) {
   const paragraphs = result.content.split(/\n{1,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
   return <section className="entry-card llm-entry"><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(result.word, query)}</h2></div><p className="source-credit">{result.modelName}</p></div><span className="local-mark">{t("localAiGenerated")}</span></div>
-    <div className="llm-content">{paragraphs.map((paragraph, index) => <p key={`${paragraph}-${index}`}>{paragraph}</p>)}</div><div className="source-note"><Icon name="info" size={16} /><span>{result.note || t("localAiNote")}</span></div></section>;
+    <div className="llm-content">{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}{streaming && <i className="streaming-caret" aria-hidden="true" />}</div><LlmPerformanceLine performance={result.performance} t={t} /><div className="source-note"><Icon name="info" size={16} /><span>{result.note || t("localAiNote")}</span></div></section>;
 }
 
 function EmptyState({ source, query, t }: { source: SourceId; query: string; t: Translator }) {
@@ -386,7 +409,7 @@ function ResultStage({ state, retry, toggleExpanded, setYoudaoSection, t }: { st
     if (!result.result.entries.length) return <EmptyState source={state.source} query={state.query} t={t} />;
     return <>{result.result.sampleData && <div className="sample-banner"><Icon name="info" size={16} /><span>{t("databasePreparing")}</span></div>}<div className="entries">{result.result.entries.map((entry, index) => <EntryCard entry={entry} index={index} query={state.query} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} t={t} key={`${entry.word}-${index}`} />)}</div></>;
   }
-  if (result?.type === "llm") return <div className="entries"><LlmCard result={result.result} query={state.query} t={t} /></div>;
+  if (result?.type === "llm") return <div className="entries"><LlmCard result={result.result} query={state.query} streaming={loading} t={t} /></div>;
   if (result?.type === "online") return <div className="entries"><OnlineCard result={result.result} query={state.query} source={state.source} youdaoSection={state.youdaoSection} setYoudaoSection={setYoudaoSection} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} t={t} /></div>;
   return <EmptyState source={state.source} query={state.query} t={t} />;
 }
@@ -410,7 +433,7 @@ function TranslationPanel({ state, setInput, submit, t }: { state: AppState; set
   const model = localModels.find((item) => item.id === state.settings.localModel)?.name ?? "Qwen3-0.6B";
   return <section className="translation-page" aria-labelledby="translation-title"><header className="panel-page-heading"><div className="modal-icon translation-icon"><Icon name="translate" size={23} /></div><div><p className="eyebrow">LOCAL LLM</p><h2 id="translation-title">{t("translationTitle")}</h2><p className="modal-copy">{t("translationCopy")}</p></div></header>
     <form className="translation-form" onSubmit={(event) => { event.preventDefault(); submit(); }}><textarea maxLength={4000} value={state.translationInput} onChange={(event) => setInput(event.target.value)} placeholder={t("translationPlaceholder")} aria-label={t("translationPlaceholder")} /><div className="translation-form-actions"><span>{model}</span><button className="primary-button" type="submit" disabled={state.translationPending}>{state.translationPending ? t("loading") : t("translate")}</button></div></form>
-    <section className="translation-result" aria-live="polite"><header><span>{t("translationResult")}</span><i /></header>{state.translationPending && <div className="translation-pending"><div className="aurora-loader"><i /><i /><i /></div><p>{t("loading")}</p></div>}{state.translationError && <p className="translation-error">{state.translationError}</p>}{state.translationResult && !state.translationPending && <><p className="translation-output">{state.translationResult.translation}</p><small>{state.translationResult.note}</small></>}{!state.translationPending && !state.translationError && !state.translationResult && <p className="translation-empty">{t("translationEmpty")}</p>}</section>
+    <section className="translation-result" aria-live="polite"><header><span>{t("translationResult")}</span><i /></header>{state.translationPending && !state.translationResult && <div className="translation-pending"><div className="aurora-loader"><i /><i /><i /></div><p>{t("loading")}</p></div>}{state.translationError && <p className="translation-error">{state.translationError}</p>}{state.translationResult && <><p className={`translation-output ${state.translationPending ? "is-streaming" : ""}`}>{state.translationResult.translation}{state.translationPending && <i className="streaming-caret" aria-hidden="true" />}</p><LlmPerformanceLine performance={state.translationResult.performance} t={t} />{!state.translationPending && <small>{state.translationResult.note}</small>}</>}{!state.translationPending && !state.translationError && !state.translationResult && <p className="translation-empty">{t("translationEmpty")}</p>}</section>
   </section>;
 }
 
@@ -559,7 +582,7 @@ function SettingsPanel({ state, fonts, updateSettings, setTab, setPanel, downloa
   </section>;
 }
 
-async function fetchSourceLookup(source: SourceId, query: string, settings: DisplaySettings, t: Translator): Promise<SourceLookupResult> {
+async function fetchSourceLookup(source: SourceId, query: string, settings: DisplaySettings, t: Translator, requestId?: string): Promise<SourceLookupResult> {
   if (source === "local") {
     if (isTauri()) return { type: "local", result: await invoke("lookup_local", { query }) };
     return { type: "local", result: query.toLowerCase() === "serendipity" ? fallbackLookup : { ...fallbackLookup, query, entries: [], suggestions: [] } };
@@ -567,7 +590,7 @@ async function fetchSourceLookup(source: SourceId, query: string, settings: Disp
   if (source === "local_llm") {
     const fingerprint = promptFingerprint(settings.dictionarySystemPrompt, DEFAULT_DICTIONARY_SYSTEM_PROMPT);
     if (isTauri()) {
-      const result = await invoke<LlmLookup>("lookup_llm", { query, modelId: settings.localModel, systemPrompt: settings.dictionarySystemPrompt });
+      const result = await invoke<LlmLookup>("lookup_llm", { query, modelId: settings.localModel, systemPrompt: settings.dictionarySystemPrompt, requestId });
       return { type: "llm", result: { ...result, promptFingerprint: fingerprint } };
     }
     return { type: "llm", result: { word: query, modelId: settings.localModel, modelName: localModels.find((model) => model.id === settings.localModel)?.name ?? "Qwen3-0.6B", content: "释义：本地 AI 词典结果会在桌面应用中生成。\n用法：浏览器预览不会加载本地模型。", note: t("localAiNote"), promptFingerprint: fingerprint } };
@@ -598,6 +621,12 @@ export default function App() {
   const scrollTimer = useRef<number | undefined>(undefined);
   const downloadRenderFrame = useRef<number | undefined>(undefined);
   const latestDownloadProgress = useRef<DownloadProgress | null>(null);
+  const streamRenderFrame = useRef<number | undefined>(undefined);
+  const latestStreamUpdates = useRef<Partial<Record<LlmStreamUpdate["operation"], LlmStreamUpdate>>>({});
+  const activeLookupStream = useRef<{ requestId: string; query: string; promptFingerprint: string } | null>(null);
+  const activeTranslationStream = useRef<{ requestId: string; source: string } | null>(null);
+  const preparedModel = useRef<LocalModelId | null>(null);
+  const preparingModel = useRef<LocalModelId | null>(null);
   stateRef.current = state;
 
   const t = useCallback<Translator>((key) => copy[state.settings.language][key], [state.settings.language]);
@@ -657,7 +686,8 @@ export default function App() {
     void invoke<DictionaryStatus>("dictionary_status").catch(() => undefined);
     void loadLlmStatus();
     let cancelled = false;
-    let stopListening: (() => void) | undefined;
+    let stopDownloadListening: (() => void) | undefined;
+    let stopStreamListening: (() => void) | undefined;
     void listen<DownloadProgress>("llm-download-progress", (event) => {
       latestDownloadProgress.current = event.payload;
       if (downloadRenderFrame.current !== undefined) return;
@@ -665,8 +695,67 @@ export default function App() {
         downloadRenderFrame.current = undefined;
         setState((current) => ({ ...current, llmDownload: latestDownloadProgress.current }));
       });
-    }).then((unlisten) => { if (cancelled) unlisten(); else stopListening = unlisten; });
-    return () => { cancelled = true; stopListening?.(); if (downloadRenderFrame.current !== undefined) window.cancelAnimationFrame(downloadRenderFrame.current); };
+    }).then((unlisten) => { if (cancelled) unlisten(); else stopDownloadListening = unlisten; });
+    void listen<LlmStreamUpdate>("llm-stream-update", (event) => {
+      const payload = event.payload;
+      if (payload.operation === "lookup" && activeLookupStream.current?.requestId !== payload.requestId) return;
+      if (payload.operation === "translation" && activeTranslationStream.current?.requestId !== payload.requestId) return;
+      latestStreamUpdates.current[payload.operation] = payload;
+      if (streamRenderFrame.current !== undefined) return;
+      streamRenderFrame.current = window.requestAnimationFrame(() => {
+        streamRenderFrame.current = undefined;
+        const updates = latestStreamUpdates.current;
+        latestStreamUpdates.current = {};
+        setState((current) => {
+          let next = current;
+          const lookup = updates.lookup;
+          const lookupContext = activeLookupStream.current;
+          if (lookup && lookupContext?.requestId === lookup.requestId && lookup.content) {
+            next = {
+              ...next,
+              sourceResults: {
+                ...next.sourceResults,
+                local_llm: {
+                  type: "llm",
+                  result: {
+                    word: lookupContext.query,
+                    modelId: lookup.modelId,
+                    modelName: lookup.modelName,
+                    content: lookup.content,
+                    note: copy[next.settings.language].localAiNote,
+                    promptFingerprint: lookupContext.promptFingerprint,
+                    performance: lookup.performance,
+                  },
+                },
+              },
+            };
+          }
+          const translation = updates.translation;
+          const translationContext = activeTranslationStream.current;
+          if (translation && translationContext?.requestId === translation.requestId) {
+            next = {
+              ...next,
+              translationResult: translation.reset || !translation.content ? null : {
+                source: translationContext.source,
+                translation: translation.content,
+                modelId: translation.modelId,
+                modelName: translation.modelName,
+                note: copy[next.settings.language].localAiNote,
+                performance: translation.performance,
+              },
+            };
+          }
+          return next;
+        });
+      });
+    }).then((unlisten) => { if (cancelled) unlisten(); else stopStreamListening = unlisten; });
+    return () => {
+      cancelled = true;
+      stopDownloadListening?.();
+      stopStreamListening?.();
+      if (downloadRenderFrame.current !== undefined) window.cancelAnimationFrame(downloadRenderFrame.current);
+      if (streamRenderFrame.current !== undefined) window.cancelAnimationFrame(streamRenderFrame.current);
+    };
   }, [loadLlmStatus]);
 
   useEffect(() => {
@@ -678,6 +767,23 @@ export default function App() {
       setFonts([{ id: SYSTEM_FONT_ID, label: "" }, ...names.map((name) => ({ id: name, label: name }))]);
     }).catch(() => undefined);
   }, [state.panel, state.settingsTab, fonts.length, loadLlmStatus]);
+
+  useEffect(() => {
+    if (!isTauri() || !state.llmStatus?.engineAvailable) return;
+    const modelId = state.settings.localModel;
+    const installed = state.llmStatus.models.some((model) => model.modelId === modelId && model.installed);
+    const shouldPrepare = state.settings.enabledSources.includes("local_llm") || state.panel === "translation";
+    if (!installed || !shouldPrepare || preparedModel.current === modelId || preparingModel.current === modelId) return;
+    const timer = window.setTimeout(() => {
+      preparingModel.current = modelId;
+      void invoke<LlmPrepareResult>("prepare_llm", { modelId }).then((result) => {
+        preparedModel.current = result.modelId;
+      }).catch(() => undefined).finally(() => {
+        if (preparingModel.current === modelId) preparingModel.current = null;
+      });
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [state.llmStatus, state.settings.localModel, state.settings.enabledSources, state.panel]);
 
   useEffect(() => {
     if (!selectionMenu) return;
@@ -714,6 +820,7 @@ export default function App() {
   const submitLookup = useCallback(async (rawQuery: string) => {
     const query = rawQuery.trim();
     const serial = ++lookupSerial.current;
+    activeLookupStream.current = null;
     suggestionSerial.current += 1;
     setInputValue(query);
     setSuggestions(null);
@@ -739,14 +846,20 @@ export default function App() {
     setState((current) => ({ ...current, sourceResults: results, pendingSources: new Set(missing) }));
     const successful: Partial<Record<SourceId, SourceLookupResult>> = {};
     await Promise.all(missing.map(async (source) => {
+      const requestId = source === "local_llm" ? llmRequestId("lookup") : undefined;
+      if (requestId) activeLookupStream.current = { requestId, query, promptFingerprint: promptFingerprint(snapshot.settings.dictionarySystemPrompt, DEFAULT_DICTIONARY_SYSTEM_PROMPT) };
       try {
-        const result = await fetchSourceLookup(source, query, snapshot.settings, (key) => copy[snapshot.settings.language][key]);
+        const result = await fetchSourceLookup(source, query, snapshot.settings, (key) => copy[snapshot.settings.language][key], requestId);
         if (serial !== lookupSerial.current) return;
         successful[source] = result;
         setState((current) => ({ ...current, sourceResults: { ...current.sourceResults, [source]: result } }));
         if (source === "local" && result.type === "local" && result.result.suggestions.length) setSuggestions({ suggestions: result.result.suggestions, correction: true });
       } catch (error) {
-        if (serial === lookupSerial.current) setState((current) => ({ ...current, sourceErrors: { ...current.sourceErrors, [source]: error instanceof Error ? error.message : String(error) } }));
+        if (serial === lookupSerial.current) setState((current) => {
+          const sourceResults = { ...current.sourceResults };
+          if (source === "local_llm") delete sourceResults.local_llm;
+          return { ...current, sourceResults, sourceErrors: { ...current.sourceErrors, [source]: error instanceof Error ? error.message : String(error) } };
+        });
       } finally {
         if (serial === lookupSerial.current) setState((current) => { const pending = new Set(current.pendingSources); pending.delete(source); return { ...current, pendingSources: pending }; });
       }
@@ -759,14 +872,20 @@ export default function App() {
     const query = snapshot.query.trim();
     if (!query || snapshot.sourceResults[source] || snapshot.pendingSources.has(source)) return;
     const serial = lookupSerial.current;
+    const requestId = source === "local_llm" ? llmRequestId("lookup") : undefined;
+    if (requestId) activeLookupStream.current = { requestId, query, promptFingerprint: promptFingerprint(snapshot.settings.dictionarySystemPrompt, DEFAULT_DICTIONARY_SYSTEM_PROMPT) };
     setState((current) => { const pending = new Set(current.pendingSources); pending.add(source); const errors = { ...current.sourceErrors }; delete errors[source]; return { ...current, pendingSources: pending, sourceErrors: errors }; });
     try {
-      const result = await fetchSourceLookup(source, query, snapshot.settings, (key) => copy[snapshot.settings.language][key]);
+      const result = await fetchSourceLookup(source, query, snapshot.settings, (key) => copy[snapshot.settings.language][key], requestId);
       if (serial !== lookupSerial.current) return;
       setState((current) => ({ ...current, sourceResults: { ...current.sourceResults, [source]: result } }));
       void cacheSourceResults(query, { [source]: result }, snapshot.settings.cacheLimit);
     } catch (error) {
-      if (serial === lookupSerial.current) setState((current) => ({ ...current, sourceErrors: { ...current.sourceErrors, [source]: error instanceof Error ? error.message : String(error) } }));
+      if (serial === lookupSerial.current) setState((current) => {
+        const sourceResults = { ...current.sourceResults };
+        if (source === "local_llm") delete sourceResults.local_llm;
+        return { ...current, sourceResults, sourceErrors: { ...current.sourceErrors, [source]: error instanceof Error ? error.message : String(error) } };
+      });
     } finally {
       if (serial === lookupSerial.current) setState((current) => { const pending = new Set(current.pendingSources); pending.delete(source); return { ...current, pendingSources: pending }; });
     }
@@ -776,12 +895,14 @@ export default function App() {
     const snapshot = stateRef.current;
     const text = snapshot.translationInput.trim();
     if (!text || snapshot.translationPending) return;
+    const requestId = llmRequestId("translation");
+    activeTranslationStream.current = { requestId, source: text };
     setState((current) => ({ ...current, translationPending: true, translationError: "", translationResult: null }));
     try {
-      const result = isTauri() ? await invoke<LlmTranslation>("translate_llm", { text, modelId: snapshot.settings.localModel, systemPrompt: snapshot.settings.translationSystemPrompt }) : { source: text, translation: "浏览器预览不会加载本地模型。请在桌面应用的离线 AI 版中使用翻译功能。", modelId: snapshot.settings.localModel, modelName: localModels.find((model) => model.id === snapshot.settings.localModel)?.name ?? "Qwen3-0.6B", note: copy[snapshot.settings.language].localAiNote };
+      const result = isTauri() ? await invoke<LlmTranslation>("translate_llm", { text, modelId: snapshot.settings.localModel, systemPrompt: snapshot.settings.translationSystemPrompt, requestId }) : { source: text, translation: "浏览器预览不会加载本地模型。请在桌面应用的离线 AI 版中使用翻译功能。", modelId: snapshot.settings.localModel, modelName: localModels.find((model) => model.id === snapshot.settings.localModel)?.name ?? "Qwen3-0.6B", note: copy[snapshot.settings.language].localAiNote };
       setState((current) => ({ ...current, translationResult: result }));
     } catch (error) {
-      setState((current) => ({ ...current, translationError: error instanceof Error ? error.message : String(error) }));
+      setState((current) => ({ ...current, translationResult: null, translationError: error instanceof Error ? error.message : String(error) }));
     } finally { setState((current) => ({ ...current, translationPending: false })); }
   }, []);
 
@@ -791,6 +912,7 @@ export default function App() {
     setState((current) => ({ ...current, llmActionPending: true, llmDownload: { modelId, downloadedBytes: 0, complete: false }, llmActionError: null }));
     try {
       await invoke("download_llm_model", { modelId, downloadSource: snapshot.settings.llmDownloadSource });
+      preparedModel.current = null;
       updateSettings((current) => ({ ...current, localModel: modelId }));
       await loadLlmStatus();
     } catch (error) {

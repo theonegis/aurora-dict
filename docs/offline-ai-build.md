@@ -6,11 +6,20 @@ Aurora Dict 的安装包默认携带 `llama-server`。模型本身仍由用户�
 
 ## 本地构建
 
-先构建与目标平台匹配的 llama.cpp `llama-server`：
+APP 运行时只需要目标平台对应的、已经编译好的 `llama-server`，不需要携带 llama.cpp 源码。把独立运行的二进制放到 `src-tauri/binaries/` 后执行检查：
+
+```bash
+AURORA_LLAMA_SERVER_PREBUILT=/absolute/path/to/llama-server \
+  bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
+```
+
+如果文件已经位于 `src-tauri/binaries/llama-server-aarch64-apple-darwin`，则无需设置环境变量：
 
 ```bash
 bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
 ```
+
+该操作只复制并验证预编译文件，不会下载源码。它会扫描 `libllama/libggml` 依赖，并在当前平台实际执行 `llama-server --version`；非独立二进制会直接拒绝进入安装包。
 
 然后执行常规构建：
 
@@ -32,6 +41,15 @@ bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
 npm run tauri build -- --bundles dmg
 ```
 
-`prepare-llama-sidecar.sh` 固定使用 llama.cpp `b5401`，这是 Qwen 官方建议用于完整 Qwen3 支持的最低版本。脚本会关闭 llama.cpp 自带的远程下载功能（模型下载由 Aurora Dict 负责）、使用静态库，并关闭 OpenMP 与针对构建主机的原生 CPU 指令集优化，以减少目标系统的运行库依赖。脚本输出的二进制位于 `src-tauri/binaries/`，仅作为构建输入，不应提交到仓库。
+`prepare-llama-sidecar.sh` 默认只接受预编译文件。维护者或 CI 确实需要从源码生成新二进制时，必须显式设置 `AURORA_BUILD_LLAMA_FROM_SOURCE=1`；本地已有源码还可以设置 `AURORA_LLAMA_CPP_SOURCE=/absolute/path/to/llama.cpp`，从而不访问网络。源码构建固定使用 llama.cpp `b5401`，使用干净 CMake 目录和 `BUILD_SHARED_LIBS=OFF`，生成后仍执行同样的依赖与运行检查。
+
+脚本输出的二进制位于 `src-tauri/binaries/`，仅作为构建输入，不应提交到仓库。macOS 本地验证可以执行：
+
+```bash
+otool -L src-tauri/binaries/llama-server-aarch64-apple-darwin
+src-tauri/binaries/llama-server-aarch64-apple-darwin --version
+```
+
+第一条命令不应列出 `libllama.dylib` 或 `libggml*.dylib`，第二条命令应能直接输出版本信息。
 
 GitHub Actions 的常规发布工作流会自动构建并打包本地 AI 引擎。发布目标为 macOS ARM64 与 x64、Windows x64，以及 Linux x64 deb 与 rpm。`Build offline AI installers` 工作流保留相同平台的手动验证构建。

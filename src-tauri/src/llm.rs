@@ -14,15 +14,17 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Mutex, OnceLock,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::Mutex as AsyncMutex;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
 const MODEL_DIRECTORY: &str = "local-llm";
 const DOWNLOAD_EVENT: &str = "llm-download-progress";
+const STREAM_EVENT: &str = "llm-stream-update";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -105,6 +107,7 @@ pub struct LlmLookup {
     model_name: String,
     content: String,
     note: String,
+    performance: LlmPerformance,
 }
 
 #[derive(Serialize)]
@@ -115,6 +118,56 @@ pub struct LlmTranslation {
     model_id: String,
     model_name: String,
     note: String,
+    performance: LlmPerformance,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmPerformance {
+    cold_start: bool,
+    startup_ms: u64,
+    first_token_ms: u64,
+    total_ms: u64,
+    prompt_tokens: Option<u64>,
+    generated_tokens: Option<u64>,
+    tokens_per_second: Option<f64>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmPrepareResult {
+    model_id: String,
+    model_name: String,
+    cold_start: bool,
+    startup_ms: u64,
+}
+
+#[derive(Clone, Copy)]
+enum LlmOperation {
+    Lookup,
+    Translation,
+}
+
+impl LlmOperation {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Lookup => "lookup",
+            Self::Translation => "translation",
+        }
+    }
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LlmStreamUpdate<'a> {
+    request_id: &'a str,
+    operation: &'static str,
+    model_id: &'static str,
+    model_name: &'static str,
+    content: &'a str,
+    done: bool,
+    reset: bool,
+    performance: Option<LlmPerformance>,
 }
 
 struct LlmRuntime {
@@ -125,6 +178,7 @@ struct LlmRuntime {
 
 pub struct LlmManager {
     runtime: Mutex<Option<LlmRuntime>>,
+    startup: AsyncMutex<()>,
     downloading: AtomicBool,
 }
 
@@ -132,6 +186,7 @@ impl Default for LlmManager {
     fn default() -> Self {
         Self {
             runtime: Mutex::new(None),
+            startup: AsyncMutex::new(()),
             downloading: AtomicBool::new(false),
         }
     }
@@ -256,16 +311,34 @@ fn engine_path(app: &AppHandle) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-fn engine_message(app: &AppHandle) -> String {
-    if engine_path(app).is_some() {
-        "本地 AI 引擎已就绪。".into()
-    } else {
-        "本地 AI 引擎不可用，请重新安装 Aurora Dict，或在开发环境设置 AURORA_LLAMA_SERVER。".into()
+fn runnable_engine(app: &AppHandle) -> Result<PathBuf, String> {
+    let path = engine_path(app).ok_or_else(|| {
+        "本地 AI 引擎不可用，请重新安装 Aurora Dict，或在开发环境设置 AURORA_LLAMA_SERVER。"
+            .to_string()
+    })?;
+    let mut command = Command::new(&path);
+    command
+        .arg("--version")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    let status = command
+        .status()
+        .map_err(|error| format!("本地 AI 引擎无法运行：{error}"))?;
+    if !status.success() {
+        return Err(
+            "本地 AI 引擎无法独立运行，可能缺少 libllama/libggml 运行库。请重新安装包含完整引擎的最新版 Aurora Dict。"
+                .into(),
+        );
     }
+    Ok(path)
 }
 
 #[tauri::command]
 pub fn llm_status(app: AppHandle) -> Result<LlmStatus, String> {
+    let engine = runnable_engine(&app);
     let models = MODELS
         .iter()
         .copied()
@@ -282,8 +355,10 @@ pub fn llm_status(app: AppHandle) -> Result<LlmStatus, String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
     Ok(LlmStatus {
-        engine_available: engine_path(&app).is_some(),
-        message: engine_message(&app),
+        engine_available: engine.is_ok(),
+        message: engine
+            .err()
+            .unwrap_or_else(|| "本地 AI 引擎已就绪。".into()),
         models,
     })
 }
@@ -501,6 +576,7 @@ struct ChatMessage<'a> {
 #[derive(Deserialize)]
 struct ChatResponse {
     choices: Vec<ChatChoice>,
+    timings: Option<LlamaTimings>,
 }
 
 #[derive(Deserialize)]
@@ -511,6 +587,37 @@ struct ChatChoice {
 #[derive(Deserialize)]
 struct ChatResponseMessage {
     content: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ChatStreamResponse {
+    #[serde(default)]
+    choices: Vec<ChatStreamChoice>,
+    timings: Option<LlamaTimings>,
+}
+
+#[derive(Deserialize)]
+struct ChatStreamChoice {
+    delta: Option<ChatStreamDelta>,
+    message: Option<ChatResponseMessage>,
+}
+
+#[derive(Deserialize)]
+struct ChatStreamDelta {
+    content: Option<String>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+struct LlamaTimings {
+    cache_n: Option<u64>,
+    prompt_n: Option<u64>,
+    predicted_n: Option<u64>,
+    predicted_per_second: Option<f64>,
+}
+
+struct CompletionResult {
+    content: String,
+    performance: LlmPerformance,
 }
 
 fn resolved_system_prompt(system_prompt: Option<String>, fallback: &str) -> Result<String, String> {
@@ -526,13 +633,32 @@ fn resolved_system_prompt(system_prompt: Option<String>, fallback: &str) -> Resu
 }
 
 #[tauri::command]
+pub async fn prepare_llm(
+    app: AppHandle,
+    manager: State<'_, LlmManager>,
+    model_id: String,
+) -> Result<LlmPrepareResult, String> {
+    let requested_model = model_definition(&model_id)?;
+    let (model, path) = resolve_downloaded_model(&app, requested_model)?;
+    let connection = ensure_server(&app, &manager, model, &path).await?;
+    Ok(LlmPrepareResult {
+        model_id: model.id.into(),
+        model_name: model.name.into(),
+        cold_start: connection.cold_start,
+        startup_ms: connection.startup_ms,
+    })
+}
+
+#[tauri::command]
 pub async fn lookup_llm(
     app: AppHandle,
     manager: State<'_, LlmManager>,
     model_id: String,
     query: String,
     system_prompt: Option<String>,
+    request_id: Option<String>,
 ) -> Result<LlmLookup, String> {
+    let started = Instant::now();
     let requested_model = model_definition(&model_id)?;
     let query = query.split_whitespace().collect::<Vec<_>>().join(" ");
     if query.is_empty() {
@@ -546,15 +672,27 @@ pub async fn lookup_llm(
         &prompt_configuration().dictionary_system_prompt,
     )?;
     let (model, path) = resolve_downloaded_model(&app, requested_model)?;
-    let base_url = ensure_server(&app, &manager, model, &path).await?;
+    let connection = ensure_server(&app, &manager, model, &path).await?;
     let user_prompt = format!("词条：{query}\n请直接给出词典结果。\n/no_think");
-    let content = complete_local_request(&base_url, &system_prompt, &user_prompt, 420).await?;
+    let completion = complete_local_request(
+        &app,
+        request_id.as_deref().unwrap_or_default(),
+        LlmOperation::Lookup,
+        model,
+        &connection,
+        &system_prompt,
+        &user_prompt,
+        420,
+        started,
+    )
+    .await?;
     Ok(LlmLookup {
         word: query,
         model_id: model.id.into(),
         model_name: model.name.into(),
-        content,
+        content: completion.content,
         note: "由本地 AI 模型生成，仅供语言学习参考。".into(),
+        performance: completion.performance,
     })
 }
 
@@ -565,7 +703,9 @@ pub async fn translate_llm(
     model_id: String,
     text: String,
     system_prompt: Option<String>,
+    request_id: Option<String>,
 ) -> Result<LlmTranslation, String> {
+    let started = Instant::now();
     let requested_model = model_definition(&model_id)?;
     let text = text.trim().to_string();
     if text.is_empty() {
@@ -579,31 +719,63 @@ pub async fn translate_llm(
         &prompt_configuration().translation_system_prompt,
     )?;
     let (model, path) = resolve_downloaded_model(&app, requested_model)?;
-    let base_url = ensure_server(&app, &manager, model, &path).await?;
+    let connection = ensure_server(&app, &manager, model, &path).await?;
     let direction = translation_direction(&text);
     let user_prompt = translation_user_prompt(&text, direction, false);
-    let mut translation =
-        complete_local_request(&base_url, &system_prompt, &user_prompt, 1_024).await?;
-    if translation_needs_retry(&text, &translation, direction) {
+    let request_id = request_id.unwrap_or_default();
+    let mut completion = complete_local_request(
+        &app,
+        &request_id,
+        LlmOperation::Translation,
+        model,
+        &connection,
+        &system_prompt,
+        &user_prompt,
+        1_024,
+        started,
+    )
+    .await?;
+    if translation_needs_retry(&text, &completion.content, direction) {
+        emit_stream_update(
+            &app,
+            &request_id,
+            LlmOperation::Translation,
+            model,
+            "",
+            false,
+            true,
+            None,
+        );
         let retry_system = format!(
             "{system_prompt}\n\n这是严格的跨语言翻译任务。输出必须使用{}，原样返回输入属于错误。",
             direction.target_language()
         );
         let retry_prompt = translation_user_prompt(&text, direction, true);
-        translation =
-            complete_local_request(&base_url, &retry_system, &retry_prompt, 1_024).await?;
+        completion = complete_local_request(
+            &app,
+            &request_id,
+            LlmOperation::Translation,
+            model,
+            &connection,
+            &retry_system,
+            &retry_prompt,
+            1_024,
+            started,
+        )
+        .await?;
     }
-    if translation_needs_retry(&text, &translation, direction) {
+    if translation_needs_retry(&text, &completion.content, direction) {
         return Err(
             "本地 AI 返回了原文，未完成跨语言翻译。请重试，或在设置中选择更大的本地模型。".into(),
         );
     }
     Ok(LlmTranslation {
         source: text,
-        translation,
+        translation: completion.content,
         model_id: model.id.into(),
         model_name: model.name.into(),
         note: "由本地 AI 模型翻译。".into(),
+        performance: completion.performance,
     })
 }
 
@@ -701,12 +873,18 @@ fn translation_needs_retry(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn complete_local_request(
-    base_url: &str,
+    app: &AppHandle,
+    request_id: &str,
+    operation: LlmOperation,
+    model: ModelDefinition,
+    connection: &ServerConnection,
     system: &str,
     user_prompt: &str,
     max_tokens: u16,
-) -> Result<String, String> {
+    started: Instant,
+) -> Result<CompletionResult, String> {
     let payload = ChatRequest {
         model: "local-qwen",
         messages: vec![
@@ -722,7 +900,7 @@ async fn complete_local_request(
         temperature: 0.2,
         top_p: 0.85,
         max_tokens,
-        stream: false,
+        stream: true,
     };
     let request_body = serde_json::to_string(&payload)
         .map_err(|error| format!("无法构造本地 AI 请求：{error}"))?;
@@ -731,9 +909,9 @@ async fn complete_local_request(
         .timeout(Duration::from_secs(75))
         .build()
         .map_err(|error| format!("无法初始化本地 AI 请求：{error}"))?;
-    let endpoint = format!("{base_url}/v1/chat/completions");
+    let endpoint = format!("{}/v1/chat/completions", connection.base_url);
     let mut attempt = 0_u8;
-    let response = loop {
+    let mut response = loop {
         let response = client
             .post(&endpoint)
             .header("content-type", "application/json")
@@ -750,21 +928,226 @@ async fn complete_local_request(
             .error_for_status()
             .map_err(|error| format!("本地 AI 查询失败：{error}"))?;
     };
-    let response: ChatResponse = serde_json::from_str(
-        &response
-            .text()
-            .await
-            .map_err(|error| format!("无法读取本地 AI 响应：{error}"))?,
-    )
-    .map_err(|error| format!("无法解析本地 AI 响应：{error}"))?;
-    response
-        .choices
-        .into_iter()
-        .next()
-        .and_then(|choice| choice.message.content)
-        .map(|content| strip_thinking_content(&content))
-        .filter(|content| !content.is_empty())
-        .ok_or_else(|| "本地 AI 没有返回可展示的内容。".to_string())
+    let mut pending = Vec::<u8>::new();
+    let mut full_response = Vec::<u8>::new();
+    let mut raw_content = String::new();
+    let mut visible_content = String::new();
+    let mut first_token_ms = None;
+    let mut timings = None;
+    let mut saw_stream_data = false;
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| format!("读取本地 AI 流式响应失败：{error}"))?
+    {
+        full_response.extend_from_slice(&chunk);
+        pending.extend_from_slice(&chunk);
+        while let Some(newline) = pending.iter().position(|byte| *byte == b'\n') {
+            let line = pending.drain(..=newline).collect::<Vec<_>>();
+            saw_stream_data |= process_stream_line(
+                &line,
+                app,
+                request_id,
+                operation,
+                model,
+                started,
+                &mut raw_content,
+                &mut visible_content,
+                &mut first_token_ms,
+                &mut timings,
+            )?;
+        }
+    }
+    if !pending.is_empty() {
+        saw_stream_data |= process_stream_line(
+            &pending,
+            app,
+            request_id,
+            operation,
+            model,
+            started,
+            &mut raw_content,
+            &mut visible_content,
+            &mut first_token_ms,
+            &mut timings,
+        )?;
+    }
+    if !saw_stream_data {
+        let response: ChatResponse = serde_json::from_slice(&full_response)
+            .map_err(|error| format!("无法解析本地 AI 响应：{error}"))?;
+        timings = response.timings;
+        raw_content = response
+            .choices
+            .into_iter()
+            .next()
+            .and_then(|choice| choice.message.content)
+            .unwrap_or_default();
+        visible_content = strip_thinking_content(&raw_content);
+        if !visible_content.is_empty() {
+            first_token_ms = Some(elapsed_millis(started));
+            emit_stream_update(
+                app,
+                request_id,
+                operation,
+                model,
+                &visible_content,
+                false,
+                false,
+                None,
+            );
+        }
+    }
+    let content = strip_thinking_content(&raw_content);
+    if content.is_empty() {
+        return Err("本地 AI 没有返回可展示的内容。".to_string());
+    }
+    let total_ms = elapsed_millis(started);
+    let performance = performance_from_timings(
+        timings,
+        connection.cold_start,
+        connection.startup_ms,
+        first_token_ms.unwrap_or(total_ms),
+        total_ms,
+    );
+    emit_stream_update(
+        app,
+        request_id,
+        operation,
+        model,
+        &content,
+        true,
+        false,
+        Some(performance.clone()),
+    );
+    Ok(CompletionResult {
+        content,
+        performance,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn process_stream_line(
+    line: &[u8],
+    app: &AppHandle,
+    request_id: &str,
+    operation: LlmOperation,
+    model: ModelDefinition,
+    started: Instant,
+    raw_content: &mut String,
+    visible_content: &mut String,
+    first_token_ms: &mut Option<u64>,
+    timings: &mut Option<LlamaTimings>,
+) -> Result<bool, String> {
+    let line = std::str::from_utf8(line)
+        .map_err(|error| format!("本地 AI 返回了无效的 UTF-8 数据：{error}"))?
+        .trim();
+    let Some(data) = line.strip_prefix("data:") else {
+        return Ok(false);
+    };
+    let data = data.trim();
+    if data.is_empty() || data == "[DONE]" {
+        return Ok(true);
+    }
+    let chunk: ChatStreamResponse =
+        serde_json::from_str(data).map_err(|error| format!("无法解析本地 AI 流式数据：{error}"))?;
+    if let Some(chunk_timings) = chunk.timings {
+        *timings = Some(chunk_timings);
+    }
+    if let Some(content) = chunk.choices.into_iter().find_map(|choice| {
+        choice
+            .delta
+            .and_then(|delta| delta.content)
+            .or_else(|| choice.message.and_then(|message| message.content))
+    }) {
+        raw_content.push_str(&content);
+        let next_visible = visible_stream_content(raw_content);
+        if next_visible != *visible_content {
+            if first_token_ms.is_none() && !next_visible.is_empty() {
+                *first_token_ms = Some(elapsed_millis(started));
+            }
+            *visible_content = next_visible;
+            emit_stream_update(
+                app,
+                request_id,
+                operation,
+                model,
+                visible_content,
+                false,
+                false,
+                None,
+            );
+        }
+    }
+    Ok(true)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_stream_update(
+    app: &AppHandle,
+    request_id: &str,
+    operation: LlmOperation,
+    model: ModelDefinition,
+    content: &str,
+    done: bool,
+    reset: bool,
+    performance: Option<LlmPerformance>,
+) {
+    if request_id.is_empty() {
+        return;
+    }
+    let _ = app.emit(
+        STREAM_EVENT,
+        LlmStreamUpdate {
+            request_id,
+            operation: operation.as_str(),
+            model_id: model.id,
+            model_name: model.name,
+            content,
+            done,
+            reset,
+            performance,
+        },
+    );
+}
+
+fn performance_from_timings(
+    timings: Option<LlamaTimings>,
+    cold_start: bool,
+    startup_ms: u64,
+    first_token_ms: u64,
+    total_ms: u64,
+) -> LlmPerformance {
+    let prompt_tokens = timings.and_then(|value| {
+        value
+            .prompt_n
+            .map(|tokens| tokens.saturating_add(value.cache_n.unwrap_or(0)))
+    });
+    LlmPerformance {
+        cold_start,
+        startup_ms,
+        first_token_ms,
+        total_ms,
+        prompt_tokens,
+        generated_tokens: timings.and_then(|value| value.predicted_n),
+        tokens_per_second: timings
+            .and_then(|value| value.predicted_per_second)
+            .filter(|speed| speed.is_finite() && *speed > 0.0),
+    }
+}
+
+fn elapsed_millis(started: Instant) -> u64 {
+    started.elapsed().as_millis().min(u64::MAX as u128) as u64
+}
+
+fn visible_stream_content(content: &str) -> String {
+    let content = content.trim();
+    if let Some((_, answer)) = content.rsplit_once("</think>") {
+        return clean_answer(answer);
+    }
+    if "<think>".starts_with(content) || content.starts_with("<think>") {
+        return String::new();
+    }
+    clean_answer(content)
 }
 
 fn strip_thinking_content(content: &str) -> String {
@@ -773,7 +1156,11 @@ fn strip_thinking_content(content: &str) -> String {
         .rsplit_once("</think>")
         .map(|(_, answer)| answer)
         .unwrap_or(content);
-    without_thinking
+    clean_answer(without_thinking)
+}
+
+fn clean_answer(content: &str) -> String {
+    content
         .trim()
         .trim_start_matches("```text")
         .trim_start_matches("```")
@@ -782,12 +1169,36 @@ fn strip_thinking_content(content: &str) -> String {
         .to_string()
 }
 
+struct ServerConnection {
+    base_url: String,
+    cold_start: bool,
+    startup_ms: u64,
+}
+
 async fn ensure_server(
     app: &AppHandle,
     manager: &LlmManager,
     model: ModelDefinition,
     model_path: &Path,
-) -> Result<String, String> {
+) -> Result<ServerConnection, String> {
+    let started = Instant::now();
+    {
+        let mut runtime = manager
+            .runtime
+            .lock()
+            .map_err(|_| "本地 AI 运行状态不可用。".to_string())?;
+        if let Some(current) = runtime.as_mut() {
+            let running = current.child.try_wait().ok().flatten().is_none();
+            if running && current.model_id == model.id {
+                return Ok(ServerConnection {
+                    base_url: current.base_url.clone(),
+                    cold_start: false,
+                    startup_ms: elapsed_millis(started),
+                });
+            }
+        }
+    }
+    let _startup_guard = manager.startup.lock().await;
     let previous = {
         let mut runtime = manager
             .runtime
@@ -796,7 +1207,11 @@ async fn ensure_server(
         if let Some(current) = runtime.as_mut() {
             let running = current.child.try_wait().ok().flatten().is_none();
             if running && current.model_id == model.id {
-                return Ok(current.base_url.clone());
+                return Ok(ServerConnection {
+                    base_url: current.base_url.clone(),
+                    cold_start: false,
+                    startup_ms: elapsed_millis(started),
+                });
             }
         }
         runtime.take()
@@ -804,7 +1219,7 @@ async fn ensure_server(
     if let Some(mut previous) = previous {
         let _ = previous.child.kill();
     }
-    let engine = engine_path(app).ok_or_else(|| engine_message(app))?;
+    let engine = runnable_engine(app)?;
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|error| format!("无法分配本地 AI 端口：{error}"))?;
     let port = listener
@@ -826,14 +1241,13 @@ async fn ensure_server(
             "--parallel",
             "1",
             "--jinja",
-            "--no-warmup",
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     #[cfg(target_os = "windows")]
     command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    let child = command
+    let mut child = command
         .spawn()
         .map_err(|error| format!("无法启动本地 AI 引擎：{error}"))?;
     let base_url = format!("http://127.0.0.1:{port}");
@@ -843,6 +1257,14 @@ async fn ensure_server(
         .build()
         .map_err(|error| format!("无法检查本地 AI 引擎：{error}"))?;
     for _ in 0..120 {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("无法读取本地 AI 引擎状态：{error}"))?
+        {
+            return Err(format!(
+                "本地 AI 引擎启动后立即退出（{status}）。安装包中的推理引擎可能不完整或缺少运行库，请重新安装最新版 Aurora Dict。"
+            ));
+        }
         if client
             .get(format!("{base_url}/health"))
             .send()
@@ -858,11 +1280,14 @@ async fn ensure_server(
                 base_url: base_url.clone(),
                 child,
             });
-            return Ok(base_url);
+            return Ok(ServerConnection {
+                base_url,
+                cold_start: true,
+                startup_ms: elapsed_millis(started),
+            });
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
-    let mut child = child;
     let _ = child.kill();
     Err("本地 AI 引擎启动超时。请确认模型文件完整，或重新下载模型。".into())
 }
@@ -870,9 +1295,10 @@ async fn ensure_server(
 #[cfg(test)]
 mod tests {
     use super::{
-        model_definition, model_download_url, prompt_configuration, resolved_system_prompt,
-        strip_thinking_content, translation_direction, translation_needs_retry,
-        translation_user_prompt, TranslationDirection,
+        model_definition, model_download_url, performance_from_timings, prompt_configuration,
+        resolved_system_prompt, strip_thinking_content, translation_direction,
+        translation_needs_retry, translation_user_prompt, visible_stream_content, LlamaTimings,
+        TranslationDirection,
     };
 
     #[test]
@@ -933,6 +1359,42 @@ mod tests {
             strip_thinking_content("<think>internal reasoning</think>\n释义：机缘巧合"),
             "释义：机缘巧合"
         );
+    }
+
+    #[test]
+    fn hides_reasoning_during_streaming_and_reveals_the_answer() {
+        assert_eq!(visible_stream_content("<thi"), "");
+        assert_eq!(
+            visible_stream_content("<think>internal reasoning in progress"),
+            ""
+        );
+        assert_eq!(
+            visible_stream_content("<think>internal reasoning</think>\n释义：机缘巧合"),
+            "释义：机缘巧合"
+        );
+    }
+
+    #[test]
+    fn exposes_llama_cpp_performance_timings() {
+        let performance = performance_from_timings(
+            Some(LlamaTimings {
+                cache_n: Some(10),
+                prompt_n: Some(6),
+                predicted_n: Some(24),
+                predicted_per_second: Some(18.5),
+            }),
+            true,
+            1_200,
+            1_450,
+            2_800,
+        );
+        assert!(performance.cold_start);
+        assert_eq!(performance.startup_ms, 1_200);
+        assert_eq!(performance.first_token_ms, 1_450);
+        assert_eq!(performance.total_ms, 2_800);
+        assert_eq!(performance.prompt_tokens, Some(16));
+        assert_eq!(performance.generated_tokens, Some(24));
+        assert_eq!(performance.tokens_per_second, Some(18.5));
     }
 
     #[test]

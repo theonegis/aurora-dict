@@ -14,10 +14,10 @@ paru -S aurora-dict-bin
 git clone ssh://aur@aur.archlinux.org/aurora-dict-bin.git
 ```
 
-必须先确认对应版本的 GitHub Release 已成功上传 Linux x64 deb。例如，版本 `0.1.2` 对应的资产名是：
+必须先确认对应版本的 GitHub Release 已成功上传 Linux x64 deb。例如，版本 `0.1.3` 对应的资产名是：
 
 ```text
-aurora-dict_0.1.2_linux_amd64_deb.deb
+aurora-dict_0.1.3_linux_amd64_deb.deb
 ```
 
 在 Aurora Dict 源码仓库中生成 `PKGBUILD` 和 `.SRCINFO`，将输出目录指向刚才克隆的 AUR 仓库：
@@ -25,7 +25,7 @@ aurora-dict_0.1.2_linux_amd64_deb.deb
 ```bash
 scripts/generate-aur-package.sh \
   --repo theonegis/aurora-dict \
-  --version 0.1.2 \
+  --version 0.1.3 \
   --output /path/to/aurora-dict-bin
 ```
 
@@ -57,7 +57,7 @@ AUR 仓库只提交打包元数据，不提交 deb 或生成的 `*.pkg.tar.zst`�
 
 ```bash
 git add PKGBUILD .SRCINFO .gitignore AURORA-DICT-LICENSE.txt
-git commit -m "Initial release: 0.1.2"
+git commit -m "Release: 0.1.3"
 git push origin master
 ```
 
