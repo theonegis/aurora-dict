@@ -153,6 +153,14 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .ui-icon { display: inline-block; width: 1em; height: 1em; font-size: var(--icon-size, 18px); line-height: 1; text-align: center; }
 .window-state-icon, .traffic-symbol { display: block; width: auto; height: auto; overflow: visible; }
 .traffic .ui-icon { opacity: 0; transition: opacity .16s ease; }
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+=======
+.traffic-zoom-symbol { transform: rotate(90deg); }
+>>>>>>> Stashed changes
+=======
+.traffic-zoom-symbol { transform: rotate(90deg); }
+>>>>>>> Stashed changes
 .mac-controls:hover .traffic .ui-icon { opacity: 1; }
 .traffic-close { background: #ff5f57; }
 .traffic-minimise { background: #ffbd2e; }
@@ -618,8 +626,16 @@ footer i { width: 1px; height: 10px; margin: 0 3px; background: rgba(109,102,135
   font-size: 14px;
   font-weight: 720;
   letter-spacing: .02em;
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
   background-color: var(--accent);
   background-image: linear-gradient(180deg, var(--accent), var(--accent-deep));
+=======
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 86%, var(--accent-deep) 14%));
+>>>>>>> Stashed changes
+=======
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 86%, var(--accent-deep) 14%));
+>>>>>>> Stashed changes
   border: 1px solid rgba(255,255,255,.16);
   border-radius: 9px;
   box-shadow: inset 0 -1px rgba(35,30,74,.07), 0 2px 4px rgba(var(--accent-rgb), .16);
