@@ -20,20 +20,6 @@ export type IconName = keyof typeof iconClasses
   | "windowMinimize"
   | "maximize"
   | "restore";
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-export type IconName = keyof typeof iconClasses
-  | "macClose"
-  | "macMinimize"
-  | "macZoom"
-  | "windowClose"
-  | "windowMinimize"
-  | "maximize"
-  | "restore";
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   if (name === "macClose") {
@@ -48,15 +34,8 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   }
   if (name === "macZoom") {
     return <svg className="ui-icon traffic-symbol traffic-zoom-symbol" width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
       <path d="M1 1H13.4L1 13.4V1ZM15 15H2.6L15 2.6V15Z" />
-=======
       <path d="M9 3H13V7L9 3ZM7 13H3V9L7 13Z" />
->>>>>>> Stashed changes
-=======
-      <path d="M9 3H13V7L9 3ZM7 13H3V9L7 13Z" />
->>>>>>> Stashed changes
     </svg>;
   }
   if (name === "windowClose") {
