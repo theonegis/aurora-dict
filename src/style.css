@@ -96,6 +96,10 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   -webkit-backdrop-filter: saturate(155%) blur(24px);
 }
 
+/* The macOS traffic lights are native NSWindow controls overlaid on this
+   custom titlebar. Reserve their standard leading area for the app brand. */
+:root[data-platform="macos"] .titlebar { padding-left: 70px; }
+
 .titlebar-drag-area {
   position: relative;
   display: flex;
@@ -137,27 +141,10 @@ button:focus-visible, input:focus-visible, a:focus-visible {
   transform: translateX(-50%);
 }
 
-.mac-controls, .win-controls { display: flex; align-items: center; gap: 7px; }
-
-.traffic {
-  display: grid;
-  width: 14px;
-  height: 14px;
-  padding: 0;
-  place-items: center;
-  color: rgba(45, 36, 39, .7);
-  border-radius: 50%;
-  opacity: .96;
-}
+.win-controls { display: flex; align-items: center; gap: 7px; }
 
 .ui-icon { display: inline-block; width: 1em; height: 1em; font-size: var(--icon-size, 18px); line-height: 1; text-align: center; }
-.window-state-icon, .traffic-symbol { display: block; width: auto; height: auto; overflow: visible; }
-.traffic .ui-icon { opacity: 0; transition: opacity .16s ease; }
-.traffic-zoom-symbol { transform: rotate(90deg); }
-.mac-controls:hover .traffic .ui-icon { opacity: 1; }
-.traffic-close { background: #ff5f57; }
-.traffic-minimise { background: #ffbd2e; }
-.traffic-maximise { color: rgba(0, 76, 30, .88); background: #28c840; }
+.window-state-icon { display: block; width: auto; height: auto; overflow: visible; }
 
 .win-controls {
   gap: 2px;
@@ -842,7 +829,6 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 .settings-actions .quiet-button { margin-right: auto; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-:root[data-theme="black"] .traffic { color: #312f3a; }
 :root[data-theme="black"] .app-shell::before, :root[data-theme="black"] .app-shell::after { opacity: .34; }
 :root[data-theme="black"] .modal-scrim { background: rgba(0,0,0,.54); }
 :root[data-theme="black"] .definition-pill, :root[data-theme="black"] .source-tab.is-active { box-shadow: inset 0 1px rgba(255,255,255,.045); }

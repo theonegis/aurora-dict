@@ -1435,17 +1435,62 @@ mod tests {
 }
 
 #[cfg(target_os = "macos")]
-fn apply_macos_window_corner_radius(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+fn configure_macos_native_window(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2::{class, msg_send, runtime::AnyObject};
+
+    // The shared Tauri configuration stays undecorated for Windows and Linux.
+    // On macOS restore a titled NSWindow, then let AppKit own the standard
+    // close, miniaturize and zoom buttons and all of their native behavior.
+    window.set_decorations(true)?;
+    window.set_title_bar_style(tauri::TitleBarStyle::Overlay)?;
 
     // A transparent NSWindow alone is insufficient on some WebKit versions: its
     // native content view may still paint beyond the web content. Clip that view
     // directly, so the 12pt radius is the physical window edge on macOS.
     const WINDOW_CORNER_RADIUS: f64 = 12.0;
+    const NS_WINDOW_STYLE_TITLED: usize = 1 << 0;
+    const NS_WINDOW_STYLE_CLOSABLE: usize = 1 << 1;
+    const NS_WINDOW_STYLE_MINIATURIZABLE: usize = 1 << 2;
+    const NS_WINDOW_STYLE_RESIZABLE: usize = 1 << 3;
+    const NS_WINDOW_STYLE_FULL_SIZE_CONTENT_VIEW: usize = 1 << 15;
+    const NS_WINDOW_TITLE_HIDDEN: isize = 1;
+    const NS_WINDOW_CLOSE_BUTTON: usize = 0;
+    const NS_WINDOW_MINIATURIZE_BUTTON: usize = 1;
+    const NS_WINDOW_ZOOM_BUTTON: usize = 2;
     let ns_window = window.ns_window()?.cast::<AnyObject>();
     let ns_view = window.ns_view()?.cast::<AnyObject>();
 
     unsafe {
+        // Apply synchronously as setup runs before the initially hidden window
+        // is shown. This also guarantees standardWindowButton returns AppKit's
+        // real NSButton instances even though tauri.conf starts borderless.
+        let style_mask: usize = msg_send![ns_window, styleMask];
+        let native_style_mask = style_mask
+            | NS_WINDOW_STYLE_TITLED
+            | NS_WINDOW_STYLE_CLOSABLE
+            | NS_WINDOW_STYLE_MINIATURIZABLE
+            | NS_WINDOW_STYLE_RESIZABLE
+            | NS_WINDOW_STYLE_FULL_SIZE_CONTENT_VIEW;
+        let _: () = msg_send![ns_window, setStyleMask: native_style_mask];
+        let _: () = msg_send![ns_window, setTitlebarAppearsTransparent: true];
+        let _: () = msg_send![ns_window, setTitleVisibility: NS_WINDOW_TITLE_HIDDEN];
+
+        for (button_kind, button_name) in [
+            (NS_WINDOW_CLOSE_BUTTON, "closeButton"),
+            (NS_WINDOW_MINIATURIZE_BUTTON, "miniaturizeButton"),
+            (NS_WINDOW_ZOOM_BUTTON, "zoomButton"),
+        ] {
+            let button: *mut AnyObject = msg_send![ns_window, standardWindowButton: button_kind];
+            if button.is_null() {
+                return Err(std::io::Error::other(format!(
+                    "NSWindow standardWindowButton(.{button_name}) is unavailable"
+                ))
+                .into());
+            }
+            let _: () = msg_send![button, setHidden: false];
+            let _: () = msg_send![button, setEnabled: true];
+        }
+
         let _: () = msg_send![ns_window, setOpaque: false];
         let clear_color: *mut AnyObject = msg_send![class!(NSColor), clearColor];
         let _: () = msg_send![ns_window, setBackgroundColor: clear_color];
@@ -1494,7 +1539,7 @@ pub fn run() {
                     .set_background_color(Some((0, 0, 0, 0).into()))
                     .map_err(std::io::Error::other)?;
                 #[cfg(target_os = "macos")]
-                apply_macos_window_corner_radius(&window).map_err(std::io::Error::other)?;
+                configure_macos_native_window(&window).map_err(std::io::Error::other)?;
                 window.show()?;
                 window.set_focus()?;
             }

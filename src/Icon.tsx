@@ -13,31 +13,12 @@ const iconClasses = {
 } as const;
 
 export type IconName = keyof typeof iconClasses
-  | "macClose"
-  | "macMinimize"
-  | "macZoom"
   | "windowClose"
   | "windowMinimize"
   | "maximize"
   | "restore";
 
 export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  if (name === "macClose") {
-    return <svg className="ui-icon traffic-symbol" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" strokeWidth="2.65" strokeLinecap="round" />
-    </svg>;
-  }
-  if (name === "macMinimize") {
-    return <svg className="ui-icon traffic-symbol" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M3.25 8H12.75" stroke="currentColor" strokeWidth="2.65" strokeLinecap="round" />
-    </svg>;
-  }
-  if (name === "macZoom") {
-    return <svg className="ui-icon traffic-symbol traffic-zoom-symbol" width={size} height={size} viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-      <path d="M1 1H13.4L1 13.4V1ZM15 15H2.6L15 2.6V15Z" />
-      <path d="M9 3H13V7L9 3ZM7 13H3V9L7 13Z" />
-    </svg>;
-  }
   if (name === "windowClose") {
     return <svg className="ui-icon window-state-icon" width={size} height={size} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3.5 3.5L12.5 12.5M12.5 3.5L3.5 12.5" stroke="currentColor" strokeWidth="2.15" strokeLinecap="round" />

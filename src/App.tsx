@@ -230,7 +230,7 @@ function WindowControls({ t }: { t: Translator }) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
-    if (!isTauri() || isMac()) return;
+    if (!isTauri()) return;
     const appWindow = getCurrentWindow();
     let disposed = false;
     let stopListening: (() => void) | undefined;
@@ -260,11 +260,6 @@ function WindowControls({ t }: { t: Translator }) {
       setMaximized(await appWindow.isMaximized());
     }
   };
-  if (isMac()) return <div className="mac-controls" aria-label={t("titlebarCaption")}>
-    <button className="traffic traffic-close" onClick={() => void controlWindow("close")} aria-label={t("closeWindow")}><Icon name="macClose" size={8} /></button>
-    <button className="traffic traffic-minimise" onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="macMinimize" size={8} /></button>
-    <button className="traffic traffic-maximise" onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name="macZoom" size={8} /></button>
-  </div>;
   return <div className="win-controls" aria-label={t("titlebarCaption")}>
     <button onClick={() => void controlWindow("minimise")} aria-label={t("minimiseWindow")}><Icon name="windowMinimize" size={12} /></button>
     <button onClick={() => void controlWindow("maximise")} aria-label={t("maximiseWindow")}><Icon name={maximized ? "restore" : "maximize"} size={12} /></button>
@@ -281,7 +276,6 @@ function TitleBar({ t }: { t: Translator }) {
     void getCurrentWindow().startDragging().catch(() => undefined);
   };
   return <header className="titlebar">
-    {isMac() && <WindowControls t={t} />}
     <div className="titlebar-drag-area" data-tauri-drag-region onPointerDown={startDragging}>
       <div className="brand"><img className="brand-app-icon" src={appIconUrl} alt="" aria-hidden="true" /><span>Aurora <em>Dict</em></span></div>
       <div className="titlebar-caption">{t("titlebarCaption")}</div>
