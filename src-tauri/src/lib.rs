@@ -132,6 +132,9 @@ fn database(app: &AppHandle) -> Result<Connection, String> {
     let connection =
         Connection::open(path).map_err(|error| format!("无法打开本地词库：{error}"))?;
     connection
+        .busy_timeout(Duration::from_millis(1_200))
+        .map_err(|error| format!("无法设置本地词库等待时间：{error}"))?;
+    connection
         .execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")
         .map_err(|error| format!("无法初始化本地词库：{error}"))?;
     if WORD_LOOKUP_INDEX_READY.get().is_none() {
@@ -283,6 +286,13 @@ fn suggest_local_words(app: AppHandle, query: String) -> Result<LocalSuggestions
     }
 
     let connection = database(&app)?;
+    autocomplete_suggestions(&connection, &query)
+}
+
+fn autocomplete_suggestions(
+    connection: &Connection,
+    query: &str,
+) -> Result<LocalSuggestions, String> {
     let exact_match = connection
         .query_row(
             "SELECT 1 FROM stardict WHERE lower(word) = lower(?1) LIMIT 1",
@@ -292,21 +302,15 @@ fn suggest_local_words(app: AppHandle, query: String) -> Result<LocalSuggestions
         .optional()
         .map_err(|error| format!("无法检查输入词条：{error}"))?
         .is_some();
-    if exact_match {
-        return Ok(LocalSuggestions {
-            suggestions: Vec::new(),
-            correction: false,
-        });
-    }
     let mut statement = connection
         .prepare(
             "SELECT word FROM stardict
-             WHERE word LIKE ?1 COLLATE NOCASE
+             WHERE word LIKE ?1 COLLATE NOCASE AND lower(word) <> lower(?2)
              ORDER BY frq DESC, word COLLATE NOCASE LIMIT 10",
         )
         .map_err(|error| format!("无法生成输入建议：{error}"))?;
     let prefix_matches = statement
-        .query_map([format!("{query}%")], |row| row.get::<_, String>(0))
+        .query_map((format!("{query}%"), query), |row| row.get::<_, String>(0))
         .map_err(|error| format!("无法读取输入建议：{error}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| format!("无法读取输入建议：{error}"))?;
@@ -314,6 +318,13 @@ fn suggest_local_words(app: AppHandle, query: String) -> Result<LocalSuggestions
     if !prefix_matches.is_empty() {
         return Ok(LocalSuggestions {
             suggestions: prefix_matches,
+            correction: false,
+        });
+    }
+
+    if exact_match {
+        return Ok(LocalSuggestions {
+            suggestions: Vec::new(),
             correction: false,
         });
     }
@@ -1324,6 +1335,24 @@ mod tests {
     }
 
     #[test]
+    fn autocomplete_keeps_longer_words_after_an_exact_prefix() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "
+                CREATE TABLE stardict (word TEXT, frq INTEGER);
+                INSERT INTO stardict (word, frq) VALUES
+                  ('app', 100), ('apple', 90), ('application', 80), ('App', 70);
+                ",
+            )
+            .unwrap();
+
+        let result = autocomplete_suggestions(&connection, "app").unwrap();
+        assert_eq!(result.suggestions, ["apple", "application"]);
+        assert!(!result.correction);
+    }
+
+    #[test]
     fn dictionary_api_parser_keeps_definitions_and_us_audio() {
         let payload = r#"[
           {
@@ -1498,7 +1527,10 @@ pub fn run() {
         .plugin(tauri_plugin_system_fonts::init())
         .manage(LlmManager::default())
         .setup(|app| {
-            ensure_bundled_dictionary(&app.handle()).map_err(std::io::Error::other)?;
+            // Warm the shared dictionary and its prefix index before the hidden
+            // window is revealed. This prevents the first few keystrokes from
+            // racing several SQLite initialization writes.
+            drop(database(&app.handle()).map_err(std::io::Error::other)?);
             vocabulary::ensure_vocabulary_book(&app.handle()).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
                 // Windows and Linux need an opaque native base below the CSS Mica
@@ -1517,8 +1549,19 @@ pub fn run() {
                     .map_err(std::io::Error::other)?;
                 #[cfg(target_os = "macos")]
                 configure_macos_native_window(&window).map_err(std::io::Error::other)?;
-                window.show()?;
-                window.set_focus()?;
+
+                // The frontend normally reveals the window immediately after
+                // its first React commit. Keep a native fallback so a frontend
+                // initialization error can never leave the app hidden forever.
+                let fallback_window = window.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(900)).await;
+                    if fallback_window.is_visible().unwrap_or(false) {
+                        return;
+                    }
+                    let _ = fallback_window.show();
+                    let _ = fallback_window.set_focus();
+                });
             }
             Ok(())
         })

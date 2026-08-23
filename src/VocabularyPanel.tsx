@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, ReactNode } from "react";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CopyKey } from "./config";
@@ -40,21 +40,23 @@ function MarkdownPreview({ value, emptyText }: { value: string; emptyText: strin
   })}</div>;
 }
 
-function MarkdownField({ label, value, placeholder, emptyText, template, templateLabel, onChange }: {
+function MarkdownField({ label, value, placeholder, emptyText, template, templateLabel, editLabel, previewLabel, onChange }: {
   label: string;
   value: string;
   placeholder: string;
   emptyText: string;
   template: string;
   templateLabel: string;
+  editLabel: string;
+  previewLabel: string;
   onChange: (value: string) => void;
 }) {
   const insertTemplate = () => onChange(value.trim() ? `${value.trimEnd()}\n\n${template}` : template);
   return <section className="markdown-field">
     <header><div><b>{label}</b><small>Markdown</small></div><button type="button" onClick={insertTemplate}><i className="fa-solid fa-wand-magic-sparkles" aria-hidden="true" />{templateLabel}</button></header>
     <div className="markdown-editor-grid">
-      <label><span className="sr-only">{label}</span><textarea value={value} maxLength={100000} spellCheck onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>
-      <section className="markdown-preview" aria-label={`${label} preview`}><MarkdownPreview value={value} emptyText={emptyText} /></section>
+      <label className="markdown-source"><span className="markdown-pane-label"><i className="fa-solid fa-pen" aria-hidden="true" />{editLabel}</span><textarea aria-label={label} value={value} maxLength={100000} spellCheck onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>
+      <section className="markdown-preview" aria-label={`${label} · ${previewLabel}`}><span className="markdown-pane-label"><i className="fa-regular fa-eye" aria-hidden="true" />{previewLabel}</span><MarkdownPreview value={value} emptyText={emptyText} /></section>
     </div>
   </section>;
 }
@@ -93,11 +95,13 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
 }) {
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [creatingNew, setCreatingNew] = useState(false);
   const [draft, setDraft] = useState<VocabularyEntryInput>(emptyEntry);
   const [baseline, setBaseline] = useState<VocabularyEntryInput>(emptyEntry);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [actionError, setActionError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const visibleEntries = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -115,26 +119,38 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
     setBaseline(next);
   }, [entries, selectedId, dirty]);
 
+  useEffect(() => {
+    if (loading || creatingNew || selectedId !== null || dirty || !entries.length) return;
+    const next = editableEntry(entries[0]);
+    setSelectedId(entries[0].id);
+    setDraft(next);
+    setBaseline(next);
+  }, [creatingNew, dirty, entries, loading, selectedId]);
+
   const mayDiscard = () => !dirty || window.confirm(t("vocabularyDiscardChanges"));
   const selectEntry = (entry: VocabularyEntry) => {
     if (!mayDiscard()) return;
     const next = editableEntry(entry);
     setSelectedId(entry.id);
+    setCreatingNew(false);
     setDraft(next);
     setBaseline(next);
     setMessage("");
     setActionError("");
+    setConfirmDelete(false);
   };
   const createEntry = () => {
     if (!mayDiscard()) return;
     const next = emptyEntry();
     setSelectedId(null);
+    setCreatingNew(true);
     setDraft(next);
     setBaseline(next);
     setMessage("");
     setActionError("");
+    setConfirmDelete(false);
   };
-  const saveEntry = async () => {
+  const saveEntry = useCallback(async () => {
     setPending(true);
     setActionError("");
     setMessage("");
@@ -142,24 +158,41 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
       const saved = await persist(draft);
       const next = editableEntry(saved);
       setSelectedId(saved.id);
+      setCreatingNew(false);
       setDraft(next);
       setBaseline(next);
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : String(reason));
     } finally { setPending(false); }
-  };
+  }, [draft, persist]);
   const deleteEntry = async () => {
-    if (draft.id === null || !window.confirm(t("vocabularyDeleteConfirm"))) return;
+    if (draft.id === null) return;
     setPending(true);
     setActionError("");
     try {
       await remove(draft.id);
-      createEntry();
+      const next = emptyEntry();
+      setSelectedId(null);
+      setCreatingNew(false);
+      setDraft(next);
+      setBaseline(next);
+      setConfirmDelete(false);
       setMessage(t("vocabularyDeleted"));
     } catch (reason) {
       setActionError(reason instanceof Error ? reason.message : String(reason));
     } finally { setPending(false); }
   };
+  const canSave = !pending && Boolean(draft.word.trim()) && dirty;
+  const saveShortcut = /Mac|iPhone|iPad|iPod/.test(navigator.platform) ? "⌘S" : "Ctrl+S";
+  useEffect(() => {
+    const saveWithKeyboard = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLocaleLowerCase() !== "s") return;
+      event.preventDefault();
+      if (canSave) void saveEntry();
+    };
+    document.addEventListener("keydown", saveWithKeyboard);
+    return () => document.removeEventListener("keydown", saveWithKeyboard);
+  }, [canSave, saveEntry]);
   const chooseOpenPath = async (action: "open" | "import") => {
     if (!isDesktop || !mayDiscard()) return;
     const selected = await open({ multiple: false, directory: false, filters: sqliteFilters });
@@ -168,7 +201,12 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
     try {
       const nextStatus = action === "open" ? await openBook(selected) : await importBook(selected);
       await refresh();
-      createEntry();
+      const next = emptyEntry();
+      setSelectedId(null);
+      setCreatingNew(false);
+      setDraft(next);
+      setBaseline(next);
+      setConfirmDelete(false);
       setMessage(action === "open" ? t("vocabularyOpened") : `${t("vocabularyImported")} · ${nextStatus.entryCount}`);
     } catch (reason) { setActionError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setPending(false); }
@@ -190,7 +228,7 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
   return <section className="vocabulary-page" aria-labelledby="vocabulary-title">
     <header className="panel-page-heading vocabulary-heading"><div className="modal-icon"><i className="fa-solid fa-book-bookmark" aria-hidden="true" /></div><div><p className="eyebrow">PORTABLE SQLITE · MARKDOWN</p><h2 id="vocabulary-title">{t("vocabularyBook")}</h2><p className="modal-copy">{t("vocabularyBookCopy")}</p></div></header>
     <section className="vocabulary-storage-card">
-      <div className="vocabulary-path"><span>{t("vocabularyCurrentPath")}</span><code title={status?.path}>{status?.path || t("vocabularyPathUnavailable")}</code><small>{status ? `${status.entryCount} ${t("vocabularyWordUnit")}` : ""}</small></div>
+      <div className="vocabulary-path"><span><i className="fa-solid fa-database" aria-hidden="true" />{t("vocabularyCurrentPath")}</span><code title={status?.path}>{status?.path || t("vocabularyPathUnavailable")}</code><small>{status ? `${status.entryCount} ${t("vocabularyWordUnit")}` : ""}</small></div>
       <div className="vocabulary-file-actions">
         <button type="button" disabled={pending || !isDesktop} onClick={() => void chooseSavePath("move")}><i className="fa-solid fa-folder-tree" aria-hidden="true" />{t("vocabularyMove")}</button>
         <button type="button" disabled={pending || !isDesktop} onClick={() => void chooseOpenPath("open")}><i className="fa-solid fa-folder-open" aria-hidden="true" />{t("vocabularyOpen")}</button>
@@ -201,14 +239,14 @@ export function VocabularyPanel({ entries, status, loading, error, isDesktop, pe
     {(error || actionError || message) && <div className={`vocabulary-feedback ${error || actionError ? "is-error" : "is-success"}`} role="status"><i className={`fa-solid ${error || actionError ? "fa-circle-exclamation" : "fa-circle-check"}`} aria-hidden="true" /><span>{error || actionError || message}</span></div>}
     <div className="vocabulary-workspace">
       <aside className="vocabulary-list-panel">
-        <div className="vocabulary-list-actions"><label><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("vocabularySearch")} /></label><button type="button" onClick={createEntry} title={t("vocabularyNew")}><i className="fa-solid fa-plus" aria-hidden="true" /></button></div>
-        <div className="vocabulary-list">{loading ? <p className="vocabulary-list-empty">{t("loading")}</p> : visibleEntries.length ? visibleEntries.map((entry) => <button type="button" className={selectedId === entry.id ? "is-active" : ""} onClick={() => selectEntry(entry)} key={entry.id}><span><b>{entry.word}</b>{entry.phonetic && <small>{entry.phonetic}</small>}</span><time>{new Date(entry.updatedAt).toLocaleDateString()}</time></button>) : <p className="vocabulary-list-empty">{t("vocabularyEmpty")}</p>}</div>
+        <div className="vocabulary-list-actions"><label><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t("vocabularySearch")} /></label><button type="button" onClick={createEntry} title={t("vocabularyNew")} aria-label={t("vocabularyNew")}><i className="fa-solid fa-plus" aria-hidden="true" /></button></div>
+        <div className="vocabulary-list">{loading ? <p className="vocabulary-list-empty">{t("loading")}</p> : visibleEntries.length ? visibleEntries.map((entry) => <button type="button" className={selectedId === entry.id ? "is-active" : ""} aria-current={selectedId === entry.id ? "true" : undefined} onClick={() => selectEntry(entry)} key={entry.id}><span><b>{entry.word}</b>{entry.phonetic && <small>{entry.phonetic}</small>}</span><time>{new Date(entry.updatedAt).toLocaleDateString()}</time></button>) : <p className="vocabulary-list-empty">{t("vocabularyEmpty")}</p>}</div>
       </aside>
       <section className="vocabulary-editor-card">
         <div className="vocabulary-word-fields"><label><span>{t("vocabularyWord")}</span><input value={draft.word} maxLength={120} autoCapitalize="none" onChange={changeDraft("word")} placeholder={t("vocabularyWordPlaceholder")} /></label><label><span>{t("vocabularyPhonetic")}</span><input value={draft.phonetic} maxLength={200} onChange={changeDraft("phonetic")} placeholder="/ˌserənˈdɪpəti/" /></label></div>
-        <MarkdownField label={t("vocabularyDefinitionMarkdown")} value={draft.definitionMarkdown} onChange={(definitionMarkdown) => setDraft((current) => ({ ...current, definitionMarkdown }))} placeholder={t("vocabularyDefinitionPlaceholder")} emptyText={t("vocabularyPreviewEmpty")} template={`## ${t("definition")}\n\n- `} templateLabel={t("vocabularyInsertDefinition")} />
-        <MarkdownField label={t("vocabularyExamplesMarkdown")} value={draft.examplesMarkdown} onChange={(examplesMarkdown) => setDraft((current) => ({ ...current, examplesMarkdown }))} placeholder={t("vocabularyExamplesPlaceholder")} emptyText={t("vocabularyPreviewEmpty")} template={`## ${t("examples")}\n\n1. **English sentence.**\n   中文翻译。`} templateLabel={t("vocabularyInsertExample")} />
-        <div className="vocabulary-editor-actions">{draft.id !== null && <button className="danger-button" type="button" disabled={pending} onClick={() => void deleteEntry()}>{t("vocabularyDelete")}</button>}<span>{dirty ? t("vocabularyUnsaved") : t("vocabularyUpToDate")}</span><button className="primary-button" type="button" disabled={pending || !draft.word.trim() || !dirty} onClick={() => void saveEntry()}>{pending ? t("loading") : t("vocabularySave")}</button></div>
+        <MarkdownField label={t("vocabularyDefinitionMarkdown")} value={draft.definitionMarkdown} onChange={(definitionMarkdown) => setDraft((current) => ({ ...current, definitionMarkdown }))} placeholder={t("vocabularyDefinitionPlaceholder")} emptyText={t("vocabularyPreviewEmpty")} template={`## ${t("definition")}\n\n- `} templateLabel={t("vocabularyInsertDefinition")} editLabel={t("vocabularyEdit")} previewLabel={t("vocabularyPreview")} />
+        <MarkdownField label={t("vocabularyExamplesMarkdown")} value={draft.examplesMarkdown} onChange={(examplesMarkdown) => setDraft((current) => ({ ...current, examplesMarkdown }))} placeholder={t("vocabularyExamplesPlaceholder")} emptyText={t("vocabularyPreviewEmpty")} template={`## ${t("examples")}\n\n1. **English sentence.**\n   中文翻译。`} templateLabel={t("vocabularyInsertExample")} editLabel={t("vocabularyEdit")} previewLabel={t("vocabularyPreview")} />
+        <div className="vocabulary-editor-actions"><div className="vocabulary-delete-actions">{draft.id !== null && (confirmDelete ? <><button className="danger-button is-confirming" type="button" disabled={pending} onClick={() => void deleteEntry()}>{t("vocabularyConfirmDelete")}</button><button className="quiet-button" type="button" onClick={() => setConfirmDelete(false)}>{t("cancel")}</button></> : <button className="danger-button" type="button" disabled={pending} onClick={() => setConfirmDelete(true)}>{t("vocabularyDelete")}</button>)}</div><span className={dirty ? "is-dirty" : "is-saved"} role="status" aria-live="polite"><i aria-hidden="true" />{dirty ? t("vocabularyUnsaved") : t("vocabularyUpToDate")}</span><button className="primary-button vocabulary-save-button" type="button" disabled={!canSave} onClick={() => void saveEntry()}><span>{pending ? t("loading") : t("vocabularySave")}</span><kbd>{saveShortcut}</kbd></button></div>
       </section>
     </div>
   </section>;

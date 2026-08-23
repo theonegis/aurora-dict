@@ -295,12 +295,12 @@ function Hero({ panel, setPanel, t }: { panel: PanelId; setPanel: (panel: PanelI
   const resetTooltip = (event: ReactPointerEvent<HTMLButtonElement>) => { delete event.currentTarget.dataset.tooltipSuppressed; };
   return <section className="hero">
     <div><p className="eyebrow">SLOW LOOKUP · FAST ANSWER</p><h1>{t("heroBefore")}<em>{t("heroEmphasis")}</em></h1><p className="hero-copy">{t("heroCopy")}</p></div>
-    <div className="quick-actions" aria-label={t("settingsTitle")}>
-      <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickDictionaryTip")} data-tooltip={t("quickDictionaryTip")}><i className="fa-solid fa-house" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickTranslationTip")} data-tooltip={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "vocabulary" ? "is-active" : ""}`} onClick={() => setPanel("vocabulary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickVocabularyTip")} data-tooltip={t("quickVocabularyTip")}><i className="fa-solid fa-book-bookmark" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "settings" ? "is-active" : ""}`} onClick={() => setPanel("settings")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickSettingsTip")} data-tooltip={t("quickSettingsTip")}><i className="fa-solid fa-sliders" aria-hidden="true" /></button>
-    </div>
+    <nav className="quick-actions" aria-label={t("mainNavigation")}>
+      <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "dictionary" ? "page" : undefined} aria-label={t("quickDictionaryTip")} data-tooltip={t("quickDictionaryTip")}><i className="fa-solid fa-house" aria-hidden="true" /></button>
+      <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "translation" ? "page" : undefined} aria-label={t("quickTranslationTip")} data-tooltip={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /></button>
+      <button className={`quick-action ${panel === "vocabulary" ? "is-active" : ""}`} onClick={() => setPanel("vocabulary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "vocabulary" ? "page" : undefined} aria-label={t("quickVocabularyTip")} data-tooltip={t("quickVocabularyTip")}><i className="fa-solid fa-book-bookmark" aria-hidden="true" /></button>
+      <button className={`quick-action ${panel === "settings" ? "is-active" : ""}`} onClick={() => setPanel("settings")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "settings" ? "page" : undefined} aria-label={t("quickSettingsTip")} data-tooltip={t("quickSettingsTip")}><i className="fa-solid fa-sliders" aria-hidden="true" /></button>
+    </nav>
   </section>;
 }
 
@@ -652,6 +652,7 @@ export default function App() {
   const stateRef = useRef(state);
   const lookupSerial = useRef(0);
   const suggestionSerial = useRef(0);
+  const suggestionCache = useRef(new Map<string, LocalSuggestions>());
   const scrollTimer = useRef<number | undefined>(undefined);
   const downloadRenderFrame = useRef<number | undefined>(undefined);
   const latestDownloadProgress = useRef<DownloadProgress | null>(null);
@@ -678,6 +679,26 @@ export default function App() {
     root.style.setProperty("--ui-font", font);
     root.style.setProperty("--word-font", font);
   }, [state.settings.theme, state.settings.language, state.settings.scale, state.settings.font]);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let cancelled = false;
+    const revealWindowAfterFirstPaint = async () => {
+      // A hidden WebView may suspend requestAnimationFrame entirely. The effect
+      // itself already runs after React commits the first DOM tree, so only give
+      // fonts a short opportunity to settle before revealing the native window.
+      await Promise.race([
+        document.fonts.ready.catch(() => undefined),
+        new Promise<void>((resolve) => window.setTimeout(resolve, 250)),
+      ]);
+      if (cancelled) return;
+      const appWindow = getCurrentWindow();
+      await appWindow.show();
+      await appWindow.setFocus();
+    };
+    void revealWindowAfterFirstPaint().catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   const updateSettings = useCallback<SettingsUpdater>((updater) => {
     setSettingsSaved(false);
@@ -898,13 +919,20 @@ export default function App() {
   useEffect(() => {
     const query = inputValue.trim();
     const serial = ++suggestionSerial.current;
-    if (!isEnglishInput(query) || query.length < 3 || query === state.query) { setSuggestions(null); return; }
+    if (!isEnglishInput(query) || query.length < 2 || query === state.query) { setSuggestions(null); return; }
+    const cacheKey = query.toLocaleLowerCase();
+    const cached = suggestionCache.current.get(cacheKey);
+    if (cached) {
+      setSuggestions(cached.suggestions.length ? cached : null);
+      return;
+    }
     const timer = window.setTimeout(async () => {
       try {
         const result = isTauri() ? await invoke<LocalSuggestions>("suggest_local_words", { query }) : { suggestions: fallbackLookup.entries.map((entry) => entry.word).filter((word) => word.startsWith(query.toLowerCase())), correction: false };
+        suggestionCache.current.set(cacheKey, result);
         if (serial === suggestionSerial.current && inputValue.trim() === query) setSuggestions(result.suggestions.length ? result : null);
       } catch { if (serial === suggestionSerial.current) setSuggestions(null); }
-    }, 65);
+    }, 120);
     return () => window.clearTimeout(timer);
   }, [inputValue, state.query]);
 
