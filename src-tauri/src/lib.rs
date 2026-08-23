@@ -1,4 +1,5 @@
 mod llm;
+mod vocabulary;
 
 use llm::LlmManager;
 use reqwest::Client;
@@ -1492,11 +1493,13 @@ pub fn run() {
 
     builder
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_system_fonts::init())
         .manage(LlmManager::default())
         .setup(|app| {
             ensure_bundled_dictionary(&app.handle()).map_err(std::io::Error::other)?;
+            vocabulary::ensure_vocabulary_book(&app.handle()).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
                 // Windows and Linux need an opaque native base below the CSS Mica
                 // layers. Otherwise every semi-transparent surface reveals the
@@ -1530,7 +1533,16 @@ pub fn run() {
             llm::download_llm_model,
             llm::delete_llm_model,
             llm::lookup_llm,
-            llm::translate_llm
+            llm::translate_llm,
+            vocabulary::list_vocabulary_entries,
+            vocabulary::add_vocabulary_entry,
+            vocabulary::save_vocabulary_entry,
+            vocabulary::delete_vocabulary_entry,
+            vocabulary::vocabulary_book_status,
+            vocabulary::export_vocabulary_book,
+            vocabulary::import_vocabulary_book,
+            vocabulary::move_vocabulary_book,
+            vocabulary::open_vocabulary_book
         ])
         .run(tauri::generate_context!())
         .expect("error while running Aurora Dictionary");

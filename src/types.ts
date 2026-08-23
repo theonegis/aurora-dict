@@ -4,7 +4,7 @@ export type UiLanguage = "zh" | "en";
 export type FontId = string;
 export type LocalModelId = "qwen3-0.6b" | "qwen3-1.7b" | "qwen3-4b";
 export type DownloadSourceId = "mirror" | "official";
-export type PanelId = "dictionary" | "translation" | "settings";
+export type PanelId = "dictionary" | "translation" | "vocabulary" | "settings";
 export type SettingsTabId = "appearance" | "dictionary" | "software";
 
 export interface DictionaryEntry {
@@ -169,6 +169,26 @@ export interface QueryCacheRecord {
   query: string;
   accessedAt: number;
   results: Partial<Record<SourceId, SourceLookupResult>>;
+}
+
+export interface VocabularyEntryInput {
+  id: number | null;
+  word: string;
+  phonetic: string;
+  definitionMarkdown: string;
+  examplesMarkdown: string;
+}
+
+export interface VocabularyEntry extends Omit<VocabularyEntryInput, "id"> {
+  id: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface VocabularyBookStatus {
+  path: string;
+  entryCount: number;
+  backupPath?: string;
 }
 
 export interface AppState {

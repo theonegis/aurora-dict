@@ -12,6 +12,8 @@
     "core:window:allow-toggle-maximize",
     "core:window:allow-start-dragging",
     "system-fonts:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
     {
       "identifier": "opener:allow-open-url",
       "allow": [

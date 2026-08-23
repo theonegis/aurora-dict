@@ -7,6 +7,7 @@ import { readText as readClipboardText, writeText as writeClipboardText } from "
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { getSystemFonts } from "tauri-plugin-system-fonts-api";
 import { Icon } from "./Icon";
+import { VocabularyPanel } from "./VocabularyPanel";
 import {
   CACHE_LIMIT_OPTIONS,
   DEFAULT_DICTIONARY_SYSTEM_PROMPT,
@@ -43,10 +44,14 @@ import type {
   OnlineExample,
   OnlineLookup,
   OnlinePhrase,
+  OnlineSense,
   PanelId,
   SettingsTabId,
   SourceId,
   SourceLookupResult,
+  VocabularyBookStatus,
+  VocabularyEntry,
+  VocabularyEntryInput,
 } from "./types";
 
 const appIconUrl = new URL("../src-tauri/icons/icon.png", import.meta.url).href;
@@ -198,10 +203,11 @@ async function pasteTextFromClipboard(): Promise<string> {
   return navigator.clipboard?.readText ? navigator.clipboard.readText() : "";
 }
 
-function SelectionLookupMenu({ menu, copySelection, lookup, paste, t }: { menu: SelectionMenuState; copySelection: (text: string) => void; lookup: (text: string) => void; paste: (menu: SelectionMenuState) => void; t: Translator }) {
+function SelectionLookupMenu({ menu, copySelection, lookup, addVocabulary, paste, t }: { menu: SelectionMenuState; copySelection: (text: string) => void; lookup: (text: string) => void; addVocabulary: (text: string) => void; paste: (menu: SelectionMenuState) => void; t: Translator }) {
   return <div className="selection-lookup-menu" role="menu" style={{ left: menu.x, top: menu.y }} onContextMenu={(event) => event.preventDefault()}>
     {menu.text && <button type="button" role="menuitem" autoFocus onClick={() => copySelection(menu.text)}><i className="fa-solid fa-copy" aria-hidden="true" /><span>{t("contextCopy")}</span></button>}
     {menu.lookupText && <button type="button" role="menuitem" autoFocus={!menu.text} onClick={() => lookup(menu.lookupText)}><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><span>{t("contextQuery")}</span></button>}
+    {menu.lookupText && <button type="button" role="menuitem" onClick={() => addVocabulary(menu.lookupText)}><i className="fa-solid fa-book-medical" aria-hidden="true" /><span>{t("contextAddVocabulary")}</span></button>}
     {menu.input && <button type="button" role="menuitem" autoFocus={!menu.text && !menu.lookupText} onClick={() => paste(menu)}><i className="fa-solid fa-paste" aria-hidden="true" /><span>{t("contextPaste")}</span></button>}
   </div>;
 }
@@ -292,6 +298,7 @@ function Hero({ panel, setPanel, t }: { panel: PanelId; setPanel: (panel: PanelI
     <div className="quick-actions" aria-label={t("settingsTitle")}>
       <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickDictionaryTip")} data-tooltip={t("quickDictionaryTip")}><i className="fa-solid fa-house" aria-hidden="true" /></button>
       <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickTranslationTip")} data-tooltip={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /></button>
+      <button className={`quick-action ${panel === "vocabulary" ? "is-active" : ""}`} onClick={() => setPanel("vocabulary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickVocabularyTip")} data-tooltip={t("quickVocabularyTip")}><i className="fa-solid fa-book-bookmark" aria-hidden="true" /></button>
       <button className={`quick-action ${panel === "settings" ? "is-active" : ""}`} onClick={() => setPanel("settings")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-label={t("quickSettingsTip")} data-tooltip={t("quickSettingsTip")}><i className="fa-solid fa-sliders" aria-hidden="true" /></button>
     </div>
   </section>;
@@ -333,12 +340,41 @@ function WordForms({ exchange, t }: { exchange?: string; t: Translator }) {
   </div></div>;
 }
 
-function EntryCard({ entry, index, query, expandedContent, toggleExpanded, t }: { entry: DictionaryEntry; index: number; query: string; expandedContent: Set<string>; toggleExpanded: (key: string) => void; t: Translator }) {
+function VocabularyAddButton({ added, add, t }: { added: boolean; add: () => void; t: Translator }) {
+  return <button className={`vocabulary-add-button ${added ? "is-added" : ""}`} type="button" disabled={added} onClick={add}><i className={`fa-solid ${added ? "fa-bookmark" : "fa-book-medical"}`} aria-hidden="true" /><span>{added ? t("vocabularyAdded") : t("vocabularyAdd")}</span></button>;
+}
+
+function localVocabularyDraft(entry: DictionaryEntry, t: Translator): VocabularyEntryInput {
+  const groups = splitSenses(entry, t);
+  const sections = groups.map((group) => `### ${group.label}\n\n${group.definitions.map((definition) => `- ${definition}`).join("\n")}`);
+  if (entry.definition?.trim() && entry.definition.trim() !== entry.translation?.trim()) sections.push(`### EN\n\n${entry.definition.trim()}`);
+  return {
+    id: null,
+    word: entry.word,
+    phonetic: entry.phonetic || entry.usPhonetic || entry.ukPhonetic || "",
+    definitionMarkdown: `## ${t("definition")}\n\n${sections.join("\n\n")}`,
+    examplesMarkdown: "",
+  };
+}
+
+function onlineVocabularyDraft(result: OnlineLookup, senses: OnlineSense[], examples: OnlineExample[], t: Translator): VocabularyEntryInput {
+  const definitions = senses.map((sense) => `### ${sense.partOfSpeech}\n\n${sense.definitions.map((definition) => `- ${definition}`).join("\n")}`).join("\n\n");
+  const exampleText = examples.map((example, index) => `${index + 1}. **${example.english}**${example.translation ? `\n   ${example.translation}` : ""}`).join("\n\n");
+  return {
+    id: null,
+    word: result.word,
+    phonetic: result.pronunciation || result.usPhonetic || result.ukPhonetic || "",
+    definitionMarkdown: `## ${t("definition")}\n\n${definitions}`,
+    examplesMarkdown: exampleText ? `## ${t("examples")}\n\n${exampleText}` : "",
+  };
+}
+
+function EntryCard({ entry, index, query, expandedContent, toggleExpanded, addVocabulary, added, t }: { entry: DictionaryEntry; index: number; query: string; expandedContent: Set<string>; toggleExpanded: (key: string) => void; addVocabulary: (entry: VocabularyEntryInput) => void; added: boolean; t: Translator }) {
   const groups = splitSenses(entry, t);
   const englishDefinition = entry.definition?.trim();
   return <section className="entry-card" style={{ "--entry-index": index } as CSSProperties}><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(entry.word, query)}</h2></div>
     <PronunciationRow word={entry.word} fallbackPhonetic={entry.phonetic} ukPhonetic={entry.ukPhonetic} usPhonetic={entry.usPhonetic} ukAudio={entry.ukAudio} usAudio={entry.usAudio} t={t} /><WordForms exchange={entry.exchange} t={t} />
-  </div><span className="local-mark">{t("localMark")}</span></div><div className="sense-grid">{groups.map((group, groupIndex) => <SenseCard key={`${group.label}-${groupIndex}`} {...group} expandedContent={expandedContent} toggleExpanded={toggleExpanded} t={t} />)}</div>
+  </div><div className="entry-card-tools"><span className="local-mark">{t("localMark")}</span><VocabularyAddButton added={added} add={() => addVocabulary(localVocabularyDraft(entry, t))} t={t} /></div></div><div className="sense-grid">{groups.map((group, groupIndex) => <SenseCard key={`${group.label}-${groupIndex}`} {...group} expandedContent={expandedContent} toggleExpanded={toggleExpanded} t={t} />)}</div>
   {englishDefinition && englishDefinition !== entry.translation && <div className="english-gloss"><span>EN</span><p>{englishDefinition}</p></div>}</section>;
 }
 
@@ -360,8 +396,8 @@ function PhraseSection({ phrases, contentKey, expandedContent, toggleExpanded, t
   </div>{phrases.length > 4 && <ContentToggle contentKey={contentKey} expanded={expanded} toggle={toggleExpanded} t={t} />}</section>;
 }
 
-function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, expandedContent, toggleExpanded, t }: {
-  result: OnlineLookup; query: string; source: SourceId; youdaoSection: string; setYoudaoSection: (section: string) => void; expandedContent: Set<string>; toggleExpanded: (key: string) => void; t: Translator;
+function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, expandedContent, toggleExpanded, addVocabulary, added, t }: {
+  result: OnlineLookup; query: string; source: SourceId; youdaoSection: string; setYoudaoSection: (section: string) => void; expandedContent: Set<string>; toggleExpanded: (key: string) => void; addVocabulary: (entry: VocabularyEntryInput) => void; added: boolean; t: Translator;
 }) {
   const activeSection: OnlineContentSection | null = source === "youdao" && result.sections.length
     ? result.sections.find((section) => section.id === youdaoSection) ?? result.sections[0]
@@ -373,7 +409,7 @@ function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, ex
   const note = result.source === "有道词典" ? t("youdaoNote") : result.source === "Dictionary" ? t("dictionaryNote") : t("genericOnlineNote");
   return <section className="entry-card online-entry"><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(result.word, query)}</h2></div>
     <PronunciationRow word={result.word} fallbackPhonetic={result.pronunciation} ukPhonetic={result.ukPhonetic} usPhonetic={result.usPhonetic} ukAudio={result.ukAudio} usAudio={result.usAudio} stripOuterSlashes t={t} />
-    <p className="source-credit">{formatText(t, "structuredSource", { source: displaySource })}</p></div><span className="online-mark">{t("onlineMark")}</span></div>
+    <p className="source-credit">{formatText(t, "structuredSource", { source: displaySource })}</p></div><div className="entry-card-tools"><span className="online-mark">{t("onlineMark")}</span><VocabularyAddButton added={added} add={() => addVocabulary(onlineVocabularyDraft(result, senses, examples, t))} t={t} /></div></div>
     {result.sections.length > 0 && source === "youdao" && <div className="youdao-tabs" role="tablist" aria-label={result.source}>{result.sections.map((section) => <button type="button" role="tab" key={section.id} aria-selected={section.id === sectionId} className={`youdao-tab ${section.id === sectionId ? "is-active" : ""}`} onClick={() => setYoudaoSection(section.id)}>{section.id === "collins" ? t("collinsYoudao") : t("simpleYoudao")}</button>)}</div>}
     <div className="sense-grid">{senses.map((sense, index) => <SenseCard key={`${sense.partOfSpeech}-${index}`} label={sense.partOfSpeech === "Collins" ? t("collinsMeaning") : sense.partOfSpeech} definitions={sense.definitions} contentKey={sectionId ? `${sectionId}:sense:${index}` : undefined} expandedContent={expandedContent} toggleExpanded={toggleExpanded} t={t} />)}</div>
     {activeSection && <PhraseSection phrases={activeSection.phrases} contentKey={`${sectionId}:phrases`} expandedContent={expandedContent} toggleExpanded={toggleExpanded} t={t} />}
@@ -382,9 +418,9 @@ function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, ex
   </section>;
 }
 
-function LlmCard({ result, query, streaming, t }: { result: LlmLookup; query: string; streaming: boolean; t: Translator }) {
+function LlmCard({ result, query, streaming, addVocabulary, added, t }: { result: LlmLookup; query: string; streaming: boolean; addVocabulary: (entry: VocabularyEntryInput) => void; added: boolean; t: Translator }) {
   const paragraphs = result.content.split(/\n{1,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
-  return <section className="entry-card llm-entry"><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(result.word, query)}</h2></div><p className="source-credit">{result.modelName}</p></div><span className="local-mark">{t("localAiGenerated")}</span></div>
+  return <section className="entry-card llm-entry"><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(result.word, query)}</h2></div><p className="source-credit">{result.modelName}</p></div><div className="entry-card-tools"><span className="local-mark">{t("localAiGenerated")}</span><VocabularyAddButton added={added} add={() => addVocabulary({ id: null, word: result.word, phonetic: "", definitionMarkdown: `## ${t("definition")}\n\n${result.content}`, examplesMarkdown: "" })} t={t} /></div></div>
     <div className="llm-content">{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>)}{streaming && <i className="streaming-caret" aria-hidden="true" />}</div><LlmPerformanceLine performance={result.performance} t={t} /><div className="source-note"><Icon name="info" size={16} /><span>{result.note || t("localAiNote")}</span></div></section>;
 }
 
@@ -393,7 +429,7 @@ function EmptyState({ source, query, t }: { source: SourceId; query: string; t: 
   return <div className="empty-state"><div className="empty-orbit"><span /><Icon name={local ? "book" : "globe"} size={28} /></div><h2>{query ? t("noMatch") : t("startWord")}</h2><p>{local ? t("localEmpty") : t("onlineEmpty")}</p></div>;
 }
 
-function ResultStage({ state, retry, toggleExpanded, setYoudaoSection, t }: { state: AppState; retry: () => void; toggleExpanded: (key: string) => void; setYoudaoSection: (section: string) => void; t: Translator }) {
+function ResultStage({ state, retry, toggleExpanded, setYoudaoSection, addVocabulary, vocabularyWords, t }: { state: AppState; retry: () => void; toggleExpanded: (key: string) => void; setYoudaoSection: (section: string) => void; addVocabulary: (entry: VocabularyEntryInput) => void; vocabularyWords: Set<string>; t: Translator }) {
   const result = state.sourceResults[state.source];
   const loading = state.pendingSources.has(state.source);
   const error = state.sourceErrors[state.source];
@@ -401,15 +437,15 @@ function ResultStage({ state, retry, toggleExpanded, setYoudaoSection, t }: { st
   if (error && !result) return <div className="error-state"><div className="error-icon"><Icon name="info" size={22} /></div><div><h2>{t("queryFailed")}</h2><p>{error}</p></div><button className="secondary-button" onClick={retry}>{t("retry")}</button></div>;
   if (result?.type === "local") {
     if (!result.result.entries.length) return <EmptyState source={state.source} query={state.query} t={t} />;
-    return <>{result.result.sampleData && <div className="sample-banner"><Icon name="info" size={16} /><span>{t("databasePreparing")}</span></div>}<div className="entries">{result.result.entries.map((entry, index) => <EntryCard entry={entry} index={index} query={state.query} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} t={t} key={`${entry.word}-${index}`} />)}</div></>;
+    return <>{result.result.sampleData && <div className="sample-banner"><Icon name="info" size={16} /><span>{t("databasePreparing")}</span></div>}<div className="entries">{result.result.entries.map((entry, index) => <EntryCard entry={entry} index={index} query={state.query} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} addVocabulary={addVocabulary} added={vocabularyWords.has(entry.word.trim().toLocaleLowerCase())} t={t} key={`${entry.word}-${index}`} />)}</div></>;
   }
-  if (result?.type === "llm") return <div className="entries"><LlmCard result={result.result} query={state.query} streaming={loading} t={t} /></div>;
-  if (result?.type === "online") return <div className="entries"><OnlineCard result={result.result} query={state.query} source={state.source} youdaoSection={state.youdaoSection} setYoudaoSection={setYoudaoSection} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} t={t} /></div>;
+  if (result?.type === "llm") return <div className="entries"><LlmCard result={result.result} query={state.query} streaming={loading} addVocabulary={addVocabulary} added={vocabularyWords.has(result.result.word.trim().toLocaleLowerCase())} t={t} /></div>;
+  if (result?.type === "online") return <div className="entries"><OnlineCard result={result.result} query={state.query} source={state.source} youdaoSection={state.youdaoSection} setYoudaoSection={setYoudaoSection} expandedContent={state.expandedContent} toggleExpanded={toggleExpanded} addVocabulary={addVocabulary} added={vocabularyWords.has(result.result.word.trim().toLocaleLowerCase())} t={t} /></div>;
   return <EmptyState source={state.source} query={state.query} t={t} />;
 }
 
-function DictionaryPanel({ state, activeSources, inputValue, setInputValue, suggestions, submit, selectSource, ensureSource, retry, toggleExpanded, setYoudaoSection, t }: {
-  state: AppState; activeSources: typeof sources; inputValue: string; setInputValue: (value: string) => void; suggestions: LocalSuggestions | null; submit: (value: string) => void; selectSource: (source: SourceId) => void; ensureSource: (source: SourceId) => void; retry: () => void; toggleExpanded: (key: string) => void; setYoudaoSection: (section: string) => void; t: Translator;
+function DictionaryPanel({ state, activeSources, inputValue, setInputValue, suggestions, submit, selectSource, ensureSource, retry, toggleExpanded, setYoudaoSection, addVocabulary, vocabularyWords, t }: {
+  state: AppState; activeSources: typeof sources; inputValue: string; setInputValue: (value: string) => void; suggestions: LocalSuggestions | null; submit: (value: string) => void; selectSource: (source: SourceId) => void; ensureSource: (source: SourceId) => void; retry: () => void; toggleExpanded: (key: string) => void; setYoudaoSection: (section: string) => void; addVocabulary: (entry: VocabularyEntryInput) => void; vocabularyWords: Set<string>; t: Translator;
 }) {
   const active = activeSources.find((source) => source.id === state.source) ?? activeSources[0];
   const handleSubmit = (event: FormEvent) => { event.preventDefault(); submit(inputValue); };
@@ -419,7 +455,7 @@ function DictionaryPanel({ state, activeSources, inputValue, setInputValue, sugg
     </form><div className="search-hint"><span /><span>{t("searchHint")}</span><kbd><i className="fa-solid fa-turn-down" aria-hidden="true" /></kbd></div></section>
     <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher" style={{ "--source-count": activeSources.length } as CSSProperties}>{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
       <div className="active-source-line"><span className="active-dot" /><span>{t(active.title)}</span><i /><span>{t(active.subtitle)}</span></div></section>
-    <section className="results-stage" aria-live="polite"><ResultStage state={state} retry={retry} toggleExpanded={toggleExpanded} setYoudaoSection={setYoudaoSection} t={t} /></section>
+    <section className="results-stage" aria-live="polite"><ResultStage state={state} retry={retry} toggleExpanded={toggleExpanded} setYoudaoSection={setYoudaoSection} addVocabulary={addVocabulary} vocabularyWords={vocabularyWords} t={t} /></section>
   </>;
 }
 
@@ -608,6 +644,10 @@ export default function App() {
   const [inputValue, setInputValue] = useState("");
   const [suggestions, setSuggestions] = useState<LocalSuggestions | null>(null);
   const [settingsSaved, setSettingsSaved] = useState(true);
+  const [vocabularyEntries, setVocabularyEntries] = useState<VocabularyEntry[]>([]);
+  const [vocabularyStatus, setVocabularyStatus] = useState<VocabularyBookStatus | null>(null);
+  const [vocabularyLoading, setVocabularyLoading] = useState(false);
+  const [vocabularyError, setVocabularyError] = useState("");
   const [selectionMenu, setSelectionMenu] = useState<SelectionMenuState | null>(null);
   const stateRef = useRef(state);
   const lookupSerial = useRef(0);
@@ -625,6 +665,7 @@ export default function App() {
 
   const t = useCallback<Translator>((key) => copy[state.settings.language][key], [state.settings.language]);
   const activeSources = useMemo(() => activeSourcesFor(state.settings), [state.settings]);
+  const vocabularyWords = useMemo(() => new Set(vocabularyEntries.map((entry) => entry.word.trim().toLocaleLowerCase())), [vocabularyEntries]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -653,6 +694,62 @@ export default function App() {
       return { ...current, settings, source, sourceResults, sourceErrors, llmActionError: settings.localModel !== current.settings.localModel ? null : current.llmActionError, translationResult: translationChanged ? null : current.translationResult, translationError: translationChanged ? "" : current.translationError };
     });
   }, []);
+
+  const loadVocabulary = useCallback(async () => {
+    setVocabularyLoading(true);
+    setVocabularyError("");
+    try {
+      if (!isTauri()) {
+        setVocabularyStatus({ path: "Browser preview / aurora-vocabulary.sqlite3", entryCount: vocabularyEntries.length });
+        return;
+      }
+      const [entries, status] = await Promise.all([
+        invoke<VocabularyEntry[]>("list_vocabulary_entries", { search: null }),
+        invoke<VocabularyBookStatus>("vocabulary_book_status"),
+      ]);
+      setVocabularyEntries(entries);
+      setVocabularyStatus(status);
+    } catch (error) {
+      setVocabularyError(error instanceof Error ? error.message : String(error));
+    } finally { setVocabularyLoading(false); }
+  }, [vocabularyEntries.length]);
+
+  const persistVocabularyEntry = useCallback(async (entry: VocabularyEntryInput): Promise<VocabularyEntry> => {
+    const saved = isTauri()
+      ? await invoke<VocabularyEntry>(entry.id === null ? "add_vocabulary_entry" : "save_vocabulary_entry", { entry })
+      : { ...entry, id: entry.id ?? Date.now(), createdAt: Date.now(), updatedAt: Date.now() } as VocabularyEntry;
+    setVocabularyEntries((current) => {
+      const withoutSaved = current.filter((item) => item.id !== saved.id);
+      return [saved, ...withoutSaved].sort((left, right) => right.updatedAt - left.updatedAt);
+    });
+    setVocabularyStatus((current) => current ? { ...current, entryCount: vocabularyEntries.some((item) => item.id === saved.id) ? current.entryCount : current.entryCount + 1 } : current);
+    setVocabularyError("");
+    return saved;
+  }, [vocabularyEntries]);
+
+  const addVocabularyFromLookup = useCallback((entry: VocabularyEntryInput) => {
+    void persistVocabularyEntry(entry).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      setVocabularyError(message);
+      window.alert(message);
+    });
+  }, [persistVocabularyEntry]);
+
+  const deleteVocabularyEntry = useCallback(async (id: number) => {
+    if (isTauri()) await invoke("delete_vocabulary_entry", { id });
+    setVocabularyEntries((current) => current.filter((entry) => entry.id !== id));
+    setVocabularyStatus((current) => current ? { ...current, entryCount: Math.max(0, current.entryCount - 1) } : current);
+  }, []);
+
+  const runVocabularyFileCommand = useCallback(async (command: string, argument: Record<string, string>): Promise<VocabularyBookStatus> => {
+    if (!isTauri()) throw new Error("File operations are only available in the desktop app.");
+    const status = await invoke<VocabularyBookStatus>(command, argument);
+    setVocabularyStatus(status);
+    setVocabularyError("");
+    return status;
+  }, []);
+
+  useEffect(() => { void loadVocabulary(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadLlmStatus = useCallback(async () => {
     if (!isTauri()) return;
@@ -935,7 +1032,7 @@ export default function App() {
     const rect = target.getBoundingClientRect();
     const anchorX = event.clientX > 0 ? event.clientX : rect.left + 16;
     const anchorY = event.clientY > 0 ? event.clientY : rect.bottom;
-    const itemCount = Number(Boolean(context.text)) + Number(Boolean(context.lookupText)) + Number(Boolean(context.input));
+    const itemCount = Number(Boolean(context.text)) + Number(Boolean(context.lookupText)) * 2 + Number(Boolean(context.input));
     setSelectionMenu({
       ...context,
       x: clamp(anchorX, 8, Math.max(8, window.innerWidth - 248)),
@@ -969,6 +1066,11 @@ export default function App() {
     void submitLookup(text);
   }, [submitLookup]);
 
+  const addSelectionToVocabulary = useCallback((text: string) => {
+    setSelectionMenu(null);
+    addVocabularyFromLookup({ id: null, word: text, phonetic: "", definitionMarkdown: `## ${t("definition")}\n\n- `, examplesMarkdown: "" });
+  }, [addVocabularyFromLookup, t]);
+
   const handleScroll = () => {
     setSelectionMenu(null);
     const root = document.querySelector("#app");
@@ -978,8 +1080,9 @@ export default function App() {
   };
 
   return <div className="app-shell"><TitleBar t={t} /><div className="content-panel" onScroll={handleScroll}><main onContextMenu={openSelectionMenu}><Hero panel={state.panel} setPanel={(panel) => setState((current) => ({ ...current, panel }))} t={t} />
-    {state.panel === "dictionary" && <div className="selection-lookup-surface"><DictionaryPanel state={state} activeSources={activeSources} inputValue={inputValue} setInputValue={setInputValue} suggestions={suggestions} submit={(value) => void submitLookup(value)} selectSource={(source) => setState((current) => ({ ...current, source, youdaoSection: "simple", expandedContent: new Set() }))} ensureSource={(source) => void ensureSource(source)} retry={() => void submitLookup(state.query)} toggleExpanded={(key) => setState((current) => { const expanded = new Set(current.expandedContent); if (expanded.has(key)) expanded.delete(key); else expanded.add(key); return { ...current, expandedContent: expanded }; })} setYoudaoSection={(youdaoSection) => setState((current) => ({ ...current, youdaoSection }))} t={t} /></div>}
+    {state.panel === "dictionary" && <div className="selection-lookup-surface"><DictionaryPanel state={state} activeSources={activeSources} inputValue={inputValue} setInputValue={setInputValue} suggestions={suggestions} submit={(value) => void submitLookup(value)} selectSource={(source) => setState((current) => ({ ...current, source, youdaoSection: "simple", expandedContent: new Set() }))} ensureSource={(source) => void ensureSource(source)} retry={() => void submitLookup(state.query)} toggleExpanded={(key) => setState((current) => { const expanded = new Set(current.expandedContent); if (expanded.has(key)) expanded.delete(key); else expanded.add(key); return { ...current, expandedContent: expanded }; })} setYoudaoSection={(youdaoSection) => setState((current) => ({ ...current, youdaoSection }))} addVocabulary={addVocabularyFromLookup} vocabularyWords={vocabularyWords} t={t} /></div>}
     {state.panel === "translation" && <div className="selection-lookup-surface"><TranslationPanel state={state} setInput={(translationInput) => setState((current) => ({ ...current, translationInput }))} submit={() => void translate()} t={t} /></div>}
+    {state.panel === "vocabulary" && <div className="selection-lookup-surface"><VocabularyPanel entries={vocabularyEntries} status={vocabularyStatus} loading={vocabularyLoading} error={vocabularyError} isDesktop={isTauri()} persist={persistVocabularyEntry} remove={deleteVocabularyEntry} refresh={loadVocabulary} importBook={(path) => runVocabularyFileCommand("import_vocabulary_book", { sourcePath: path })} exportBook={(path) => runVocabularyFileCommand("export_vocabulary_book", { destinationPath: path })} moveBook={(path) => runVocabularyFileCommand("move_vocabulary_book", { destinationPath: path })} openBook={(path) => runVocabularyFileCommand("open_vocabulary_book", { sourcePath: path })} t={t} /></div>}
     {state.panel === "settings" && <SettingsPanel state={state} fonts={fonts} updateSettings={updateSettings} setTab={(settingsTab) => setState((current) => ({ ...current, settingsTab }))} setPanel={(panel) => setState((current) => ({ ...current, panel }))} downloadModel={(model) => void downloadModel(model)} resetSettings={resetSettings} saveSettings={saveSettings} settingsSaved={settingsSaved} t={t} />}
-  </main></div>{selectionMenu && <SelectionLookupMenu menu={selectionMenu} copySelection={copySelection} lookup={lookupSelection} paste={pasteSelection} t={t} />}<footer><span className="footer-pulse" /><span>{t("footerLocalFirst")}</span><i /><span>{t("footerLearning")}</span></footer></div>;
+  </main></div>{selectionMenu && <SelectionLookupMenu menu={selectionMenu} copySelection={copySelection} lookup={lookupSelection} addVocabulary={addSelectionToVocabulary} paste={pasteSelection} t={t} />}<footer><span className="footer-pulse" /><span>{t("footerLocalFirst")}</span><i /><span>{t("footerLearning")}</span></footer></div>;
 }
