@@ -27,7 +27,7 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       release_id: ${{ steps.release.outputs.release_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Create or reuse the release
         id: release
         env:
@@ -59,7 +59,19 @@ jobs:
               --draft
           fi
 
-          release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG" --jq '.id')"
+          release_id=""
+          for attempt in {1..10}; do
+            if release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG" --jq '.id' 2>/dev/null)" \
+              && [[ -n "$release_id" ]]; then
+              break
+            fi
+            echo "Waiting for release $REQUESTED_TAG to become available ($attempt/10)..."
+            sleep 2
+          done
+          [[ -n "$release_id" ]] || {
+            echo "Release $REQUESTED_TAG was created but its ID did not become available." >&2
+            exit 1
+          }
           echo "tag=$REQUESTED_TAG" >> "$GITHUB_OUTPUT"
           echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
 
@@ -78,10 +90,10 @@ jobs:
             args: "--target x86_64-apple-darwin --bundles dmg"
             sidecar_target: x86_64-apple-darwin
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -107,10 +119,10 @@ jobs:
     needs: prepare-release
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -133,10 +145,10 @@ jobs:
     needs: prepare-release
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           lfs: true
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
