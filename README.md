@@ -59,11 +59,11 @@ bash scripts/prepare-llama-sidecar.sh aarch64-apple-darwin
 npm run tauri build
 ```
 
-推送  Git tag（或手动运行 Actions）会触发 [发布工作流](.github/workflows/release.yml)，构建：
+推送新的 Git tag（或手动运行 Actions）会触发 [发布工作流](.github/workflows/release.yml)。工作流先创建草稿 Release，只有所有平台均构建成功才会公开发布：
 
 ```Shell
-git tag -f -a v0.x.x -m "Aurora Dict v0.x.x"
-git push --force origin v0.x.x
+git tag -a v0.x.x -m "Aurora Dict v0.x.x"
+git push origin v0.x.x
 ```
 
 - macOS ARM64 与 x64 `.dmg`；
@@ -74,7 +74,7 @@ git push --force origin v0.x.x
 
 Arch Linux 用户包使用 `aurora-dict-bin`，AUR 发布与维护步骤见 [AUR 发布说明](docs/aur-publishing.md)。发布后可通过 `paru -S aurora-dict-bin` 安装。
 
-工作流默认产生未签名的产物。
+工作流默认产生未经过开发者证书签名和公证的产物；macOS 安装包使用 ad-hoc 签名。
 
 macOS下提示：“Aurora Dict”已损坏，无法打开。 你应该将它移到废纸篓，可在终端执行如下命令解决：
 
