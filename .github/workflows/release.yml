@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing or new release tag, for example v0.1.4"
+        description: "Existing or new release tag, for example v1.0.0"
         required: true
-        default: "v0.1.4"
+        default: "v1.0.0"
         type: string
 
 permissions:
@@ -61,10 +61,14 @@ jobs:
 
           release_id=""
           for attempt in {1..10}; do
-            if release_id="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$REQUESTED_TAG" --jq '.id' 2>/dev/null)" \
-              && [[ -n "$release_id" ]]; then
+            if release_id="$(gh release view "$REQUESTED_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json databaseId \
+              --jq '.databaseId' 2>/dev/null)" \
+              && [[ "$release_id" =~ ^[0-9]+$ ]]; then
               break
             fi
+            release_id=""
             echo "Waiting for release $REQUESTED_TAG to become available ($attempt/10)..."
             sleep 2
           done
@@ -187,14 +191,16 @@ jobs:
       - name: Publish the draft after every installer succeeds
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.tag }}
         run: |
           set -euo pipefail
-          is_draft="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" --jq '.draft')"
+          is_draft="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft \
+            --jq '.isDraft')"
           if [[ "$is_draft" == "true" ]]; then
-            gh api \
-              --method PATCH \
-              "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
-              -F draft=false \
-              -f make_latest=true >/dev/null
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft=false \
+              --latest
           fi
