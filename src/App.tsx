@@ -19,7 +19,7 @@ import {
   initialFonts,
   localModels,
   sources,
-  systemFontStack,
+  systemFontStacks,
   themes,
 } from "./config";
 import type { CopyKey } from "./config";
@@ -62,6 +62,13 @@ const homepageUrl = "https://theonegis.github.io";
 function isTauri(): boolean { return "__TAURI_INTERNALS__" in window; }
 function isMac(): boolean { return /Mac|iPhone|iPad|iPod/.test(navigator.platform); }
 function isWindows(): boolean { return /Win/.test(navigator.platform); }
+function platformName(): keyof typeof systemFontStacks {
+  if (["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) {
+    const preview = new URLSearchParams(window.location.search).get("platform");
+    if (preview === "windows" || preview === "macos" || preview === "linux") return preview;
+  }
+  return isWindows() ? "windows" : isMac() ? "macos" : "linux";
+}
 function isEnglishInput(value: string): boolean { return /^[a-z][a-z' -]*$/i.test(value.trim()); }
 function clamp(value: number, minimum: number, maximum: number): number { return Math.min(Math.max(value, minimum), maximum); }
 
@@ -670,11 +677,12 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
+    const platform = platformName();
     root.dataset.theme = state.settings.theme;
-    root.dataset.platform = isWindows() ? "windows" : isMac() ? "macos" : "linux";
+    root.dataset.platform = platform;
     root.lang = state.settings.language === "zh" ? "zh-CN" : "en";
     root.style.setProperty("--ui-scale", state.settings.scale.toFixed(2));
-    const defaultFont = isWindows() ? '"Aurora Windows Chinese", Aptos, Arial, sans-serif' : systemFontStack;
+    const defaultFont = systemFontStacks[platform];
     const font = state.settings.font === SYSTEM_FONT_ID ? defaultFont : `"${state.settings.font.replaceAll('"', '\\"')}", ${defaultFont}`;
     root.style.setProperty("--ui-font", font);
     root.style.setProperty("--word-font", font);
