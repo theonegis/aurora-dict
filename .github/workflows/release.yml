@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing or new release tag, for example v1.0.0"
+        description: "Existing or new release tag, for example v1.1.0"
         required: true
-        default: "v1.0.0"
+        default: "v1.1.0"
         type: string
 
 permissions:
@@ -47,6 +47,15 @@ jobs:
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           [[ "$PACKAGE_VERSION" == "$APP_VERSION" ]] || {
             echo "package.json version $PACKAGE_VERSION does not match Tauri version $APP_VERSION." >&2
+            exit 2
+          }
+          CARGO_VERSION="$(awk -F'"' '
+            /^\[package\]$/ { in_package = 1; next }
+            /^\[/ { if (in_package) exit }
+            in_package && /^version[[:space:]]*=/ { print $2; exit }
+          ' src-tauri/Cargo.toml)"
+          [[ "$CARGO_VERSION" == "$APP_VERSION" ]] || {
+            echo "Cargo.toml version $CARGO_VERSION does not match Tauri version $APP_VERSION." >&2
             exit 2
           }
 

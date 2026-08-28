@@ -266,8 +266,8 @@ git lfs pull
 发布新版本前，请确保 `src-tauri/tauri.conf.json` 的 `version` 与 tag 一致：
 
 ```bash
-git tag -a v0.1.0 -m "Aurora Dict v0.1.0"
-git push origin v0.1.0
+git tag -a v1.1.0 -m "Aurora Dict v1.1.0"
+git push origin v1.1.0
 ```
 
 工作流会用 Git LFS 拉取离线词库；如果 Actions 日志提示资源不存在，请确认该 ZIP 已作为 LFS 文件提交并已上传。

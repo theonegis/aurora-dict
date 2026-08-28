@@ -15,7 +15,7 @@ Options:
   -h, --help     Show this help.
 
 Example:
-  scripts/generate-aur-package.sh --repo theonegis/aurora-dict --version 0.1.3
+  scripts/generate-aur-package.sh --repo theonegis/aurora-dict --version 1.1.0
 EOF
 }
 
@@ -42,7 +42,7 @@ done
   exit 2
 }
 [[ "$version" =~ ^[0-9]+([.][0-9]+){1,3}([+._-][[:alnum:]._-]+)?$ ]] || {
-  echo "--version must be a package version such as 0.1.0." >&2
+  echo "--version must be a package version such as 1.1.0." >&2
   exit 2
 }
 
@@ -87,7 +87,6 @@ url='https://github.com/${repository}'
 license=('PolyForm-Noncommercial-1.0.0' 'MIT')
 depends=(
   'cairo'
-  'desktop-file-utils'
   'gdk-pixbuf2'
   'glib2'
   'gtk3'
