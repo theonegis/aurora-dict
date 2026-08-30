@@ -135,7 +135,7 @@ package() {
 EOF
 
 cat >"${output_dir}/.gitignore" <<EOF
-${asset_name}
+aurora-dict_*_linux_amd64_deb.deb
 src/
 pkg/
 *.pkg.tar.*
