@@ -103,6 +103,30 @@ npm run tauri build -- --target x86_64-apple-darwin --bundles dmg
 src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/
 ```
 
+### macOS Dock 图标
+
+默认打包继续使用原有 `icon.icns`，保留已确认合适的 macOS 27 显示效果。针对 macOS 15 上图标偏大的情况，提供显式选择的兼容打包配置；它不按 Intel/Apple Silicon 或屏幕尺寸自动切换。
+
+为 macOS 15 的 Intel Mac 构建时：
+
+```bash
+bash scripts/prepare-llama-sidecar.sh x86_64-apple-darwin
+npm run tauri build -- --target x86_64-apple-darwin --bundles dmg --config src-tauri/tauri.macos-legacy.conf.json
+```
+
+此配置仅替换安装包图标，也适用于应用未运行时的 Dock 显示。其他 macOS 窗口配置仍由 `tauri.macos.conf.json` 提供。默认构建和发布工作流不变；兼容包不是一个会在运行时自动适配系统版本的通用包。兼容包与默认包使用相同应用标识及产物名称，请分开保存，避免混淆。
+
+兼容图标 `icon-macos-legacy.icns` 从共享矢量源 `src-tauri/icons/aurora.svg` 居中缩放至 91%，使主体占画布约 84%，各档普通和 Retina 分辨率使用相同留白。比例由 `scripts/generate-macos-icon.mjs` 中的 `scale` 控制。修改 SVG 或比例后运行：
+
+```bash
+npm ci
+npm run icons:macos
+```
+
+提交重新生成的 `src-tauri/icons/icon-macos-legacy.icns`，再构建兼容包。此命令不覆盖默认 `icon.icns`，也不改变 Windows、Linux 或应用内图标。
+
+验证时，在 macOS 15 安装兼容包，macOS 27 使用默认包，对比 Dock 中相邻图标的可见尺寸，并检查运行/退出及不同 Dock 大小下的表现。若 Dock 仍保留旧图标，可先从 Dock 移除该项目，再从新安装的应用重新添加。跨系统视觉效果需要实机确认。
+
 ### 签名与公证
 
 本地构建的应用可用于个人测试。若要将 DMG 交给其他 macOS 用户，则应使用 Apple Developer 的 **Developer ID Application** 证书签名并完成 notarization；否则 Gatekeeper 可能提示应用“已损坏”或无法验证开发者。
