@@ -662,30 +662,93 @@ async fn youdao_is_available() -> bool {
     client.get("https://dict.youdao.com/").send().await.is_ok()
 }
 
+// Retry transient failures once; never retry missing words or rate limits.
+fn dictionary_status_is_retryable(status: u16) -> bool {
+    matches!(status, 408 | 500 | 502 | 503 | 504 | 520..=524)
+}
+
+fn dictionary_status_error(status: u16, query: &str) -> String {
+    match status {
+        404 => format!("Dictionary 未找到“{query}”，请检查拼写；该词典可能未收录此词或短语。"),
+        429 => "Dictionary API 请求过于频繁，请稍后再试，或切换至本地查询。".into(),
+        408 | 504 | 522 | 524 => format!(
+            "Dictionary API 服务响应超时（HTTP {status}），请稍后重试，或切换至本地查询/有道词典。"
+        ),
+        500..=599 => format!(
+            "Dictionary API 服务暂时不可用（HTTP {status}），请稍后重试，或切换至本地查询/有道词典。"
+        ),
+        _ => format!("Dictionary API 请求失败（HTTP {status}）。请稍后重试。"),
+    }
+}
+
+fn dictionary_request_error(error: &reqwest::Error) -> String {
+    let reason = if error.is_timeout() {
+        "连接或读取响应超时"
+    } else if error.is_connect() {
+        "无法建立连接，请检查网络、DNS 和代理设置"
+    } else {
+        "网络请求或响应读取失败"
+    };
+    // Display alone hides the underlying DNS/TLS/socket cause. Preserve that
+    // cause without including the requested URL in the top-level error.
+    let mut details = Vec::new();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        let detail = cause.to_string();
+        if !details.contains(&detail) {
+            details.push(detail);
+        }
+        source = cause.source();
+    }
+    let details = if details.is_empty() {
+        String::new()
+    } else {
+        format!("\n详细原因：{}", details.join("；"))
+    };
+    format!("Dictionary API {reason}。请稍后重试，或切换至本地查询/有道词典。{details}")
+}
+
 async fn lookup_dictionary_api(query: &str) -> Result<OnlineLookup, String> {
     let encoded_query = urlencoding::encode(query);
     let api_url = format!("https://api.dictionaryapi.dev/api/v2/entries/en/{encoded_query}");
     let client = Client::builder()
         .user_agent(USER_AGENT)
+        .connect_timeout(Duration::from_secs(5))
         .timeout(Duration::from_secs(12))
         .build()
         .map_err(|error| format!("无法建立 Dictionary API 连接：{error}"))?;
-    let response = client
-        .get(&api_url)
-        .send()
-        .await
-        .map_err(|error| format!("无法访问 Dictionary API：{error}"))?;
-    if response.status().as_u16() == 404 {
-        return Err(format!("Dictionary 未找到“{query}”。"));
+    for attempt in 0..2 {
+        if attempt > 0 {
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
+        let response = match client.get(&api_url).header("Accept", "application/json").send().await {
+            Ok(response) => response,
+            Err(error) => {
+                if attempt == 0 && (error.is_timeout() || error.is_connect()) {
+                    continue;
+                }
+                return Err(dictionary_request_error(&error));
+            }
+        };
+        let status = response.status();
+        if !status.is_success() {
+            if attempt == 0 && dictionary_status_is_retryable(status.as_u16()) {
+                continue;
+            }
+            return Err(dictionary_status_error(status.as_u16(), query));
+        }
+        let payload = match response.text().await {
+            Ok(payload) => payload,
+            Err(error) => {
+                if attempt == 0 && (error.is_timeout() || error.is_body()) {
+                    continue;
+                }
+                return Err(dictionary_request_error(&error));
+            }
+        };
+        return parse_dictionary_api(&payload, query, &api_url);
     }
-    let response = response
-        .error_for_status()
-        .map_err(|error| format!("Dictionary API 暂时无法响应：{error}"))?;
-    let payload = response
-        .text()
-        .await
-        .map_err(|error| format!("无法读取 Dictionary API 响应：{error}"))?;
-    parse_dictionary_api(&payload, query, &api_url)
+    unreachable!("the last request attempt always returns a result")
 }
 
 fn parse_youdao(page: &str, query: &str, url: &str) -> Result<OnlineLookup, String> {
@@ -1350,6 +1413,21 @@ mod tests {
         let result = autocomplete_suggestions(&connection, "app").unwrap();
         assert_eq!(result.suggestions, ["apple", "application"]);
         assert!(!result.correction);
+    }
+
+    #[test]
+    fn dictionary_transient_failures_are_distinct_from_missing_words() {
+        for status in [408, 500, 502, 503, 504, 520, 522, 524] {
+            assert!(dictionary_status_is_retryable(status));
+        }
+        for status in [200, 400, 401, 403, 404, 429] {
+            assert!(!dictionary_status_is_retryable(status));
+        }
+        assert!(dictionary_status_error(522, "preclude").contains("超时"));
+        assert!(!dictionary_status_error(522, "preclude").contains("未找到"));
+        assert!(dictionary_status_error(404, "preclude").contains("未找到“preclude”"));
+        assert!(dictionary_status_error(429, "preclude").contains("过于频繁"));
+        assert!(dictionary_status_error(503, "preclude").contains("服务暂时不可用"));
     }
 
     #[test]

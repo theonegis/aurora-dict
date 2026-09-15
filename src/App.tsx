@@ -87,7 +87,8 @@ function promptFingerprint(prompt: string, fallback: string): string {
     hash ^= content.charCodeAt(index);
     hash = Math.imul(hash, 16_777_619);
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  // Invalidate AI answers cached before the Intel Mac inference fix.
+  return `inference-v2:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -457,7 +458,7 @@ function DictionaryPanel({ state, activeSources, inputValue, setInputValue, sugg
   const active = activeSources.find((source) => source.id === state.source) ?? activeSources[0];
   const handleSubmit = (event: FormEvent) => { event.preventDefault(); submit(inputValue); };
   return <>
-    <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
+    <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
       {suggestions && suggestions.suggestions.length > 0 && <div className="input-suggestions" role="listbox" aria-label={t("inputSuggestions")}>{suggestions.correction && <span className="input-suggestions-label">{t("spellingCorrection")}</span>}<div className="input-suggestions-list">{suggestions.suggestions.map((word) => <button type="button" key={word} onClick={() => submit(word)}><span>{word}</span></button>)}</div></div>}
     </form><div className="search-hint"><span /><span>{t("searchHint")}</span><kbd><i className="fa-solid fa-turn-down" aria-hidden="true" /></kbd></div></section>
     <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher" style={{ "--source-count": activeSources.length } as CSSProperties}>{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
