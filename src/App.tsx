@@ -692,7 +692,20 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let cancelled = false;
+    let stopListening: (() => void) | undefined;
+    const appWindow = getCurrentWindow();
+    const syncWindowFrame = async () => {
+      const [maximized, fullscreen] = await Promise.all([
+        appWindow.isMaximized(), appWindow.isFullscreen(),
+      ]);
+      if (!cancelled) document.documentElement.dataset.windowExpanded = String(maximized || fullscreen);
+    };
+    void appWindow.onResized(() => { void syncWindowFrame().catch(() => undefined); }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else stopListening = unlisten;
+    }).catch(() => undefined);
     const revealWindowAfterFirstPaint = async () => {
+      await syncWindowFrame();
       // A hidden WebView may suspend requestAnimationFrame entirely. The effect
       // itself already runs after React commits the first DOM tree, so only give
       // fonts a short opportunity to settle before revealing the native window.
@@ -701,12 +714,62 @@ export default function App() {
         new Promise<void>((resolve) => window.setTimeout(resolve, 250)),
       ]);
       if (cancelled) return;
-      const appWindow = getCurrentWindow();
       await appWindow.show();
       await appWindow.setFocus();
     };
     void revealWindowAfterFirstPaint().catch(() => undefined);
-    return () => { cancelled = true; };
+    return () => { cancelled = true; stopListening?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri() || platformName() !== "linux") return;
+    const root = document.documentElement;
+    // Include the visible edge, not just the transparent shadow gutter.
+    // Coordinates are viewport pixels, so hit targets stay usable at any UI scale.
+    const resizeDirection = (event: PointerEvent) => {
+      if (root.dataset.windowExpanded === "true" || root.dataset.windowTiled === "true") return null;
+      const shell = document.querySelector(".app-shell")?.getBoundingClientRect();
+      if (!shell) return null;
+      const { clientX: x, clientY: y } = event;
+      const corner = 16;
+      const edge = 6;
+      if (x <= shell.left + corner && y <= shell.top + corner) return "NorthWest";
+      if (x >= shell.right - corner && y <= shell.top + corner) return "NorthEast";
+      if (x <= shell.left + corner && y >= shell.bottom - corner) return "SouthWest";
+      if (x >= shell.right - corner && y >= shell.bottom - corner) return "SouthEast";
+      if (y <= shell.top + edge) return "North";
+      if (y >= shell.bottom - edge) return "South";
+      if (x <= shell.left + edge) return "West";
+      if (x >= shell.right - edge) return "East";
+      return null;
+    };
+    const clearResizeCursor = () => { delete root.dataset.windowResize; };
+    const updateResizeCursor = (event: PointerEvent) => {
+      const direction = resizeDirection(event);
+      if (direction) root.dataset.windowResize = direction;
+      else clearResizeCursor();
+    };
+    const resizeFromEdge = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const direction = resizeDirection(event);
+      if (!direction) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void getCurrentWindow().startResizeDragging(direction).catch(clearResizeCursor);
+    };
+    document.addEventListener("pointerdown", resizeFromEdge, true);
+    document.addEventListener("pointermove", updateResizeCursor);
+    document.addEventListener("pointerup", clearResizeCursor, true);
+    document.documentElement.addEventListener("pointerleave", clearResizeCursor);
+    window.addEventListener("blur", clearResizeCursor);
+    return () => {
+      document.removeEventListener("pointerdown", resizeFromEdge, true);
+      document.removeEventListener("pointermove", updateResizeCursor);
+      document.removeEventListener("pointerup", clearResizeCursor, true);
+      document.documentElement.removeEventListener("pointerleave", clearResizeCursor);
+      window.removeEventListener("blur", clearResizeCursor);
+      clearResizeCursor();
+    };
   }, []);
 
   const updateSettings = useCallback<SettingsUpdater>((updater) => {

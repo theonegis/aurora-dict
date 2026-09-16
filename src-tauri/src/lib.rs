@@ -1542,6 +1542,37 @@ mod tests {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn configure_linux_native_window(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use gtk::prelude::*;
+
+    // GNOME refuses half-screen tiling when the minimum width exceeds half
+    // the logical work area (780px on a 3120px display at 200% scaling).
+    window.set_min_size(Some(tauri::LogicalSize::new(560.0, 600.0)))?;
+
+    // Tauri's isMaximized() does not include GNOME's side-by-side tiled state.
+    // GTK reports it on both Wayland and XWayland. Keep it separate from the
+    // frontend's maximized/fullscreen flag so resize queries cannot clear it.
+    let frontend = window.clone();
+    window.gtk_window()?.connect_window_state_event(move |_, event| {
+        let tiled = event.new_window_state().intersects(
+            gtk::gdk::WindowState::TILED
+                | gtk::gdk::WindowState::TOP_TILED
+                | gtk::gdk::WindowState::RIGHT_TILED
+                | gtk::gdk::WindowState::BOTTOM_TILED
+                | gtk::gdk::WindowState::LEFT_TILED,
+        );
+        let script = if tiled {
+            "document.documentElement.dataset.windowTiled = 'true'"
+        } else {
+            "document.documentElement.dataset.windowTiled = 'false'"
+        };
+        let _ = frontend.eval(script);
+        gtk::glib::Propagation::Proceed
+    });
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn configure_macos_native_window(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2::{class, msg_send, runtime::AnyObject};
@@ -1611,17 +1642,19 @@ pub fn run() {
             drop(database(&app.handle()).map_err(std::io::Error::other)?);
             vocabulary::ensure_vocabulary_book(&app.handle()).map_err(std::io::Error::other)?;
             if let Some(window) = app.get_webview_window("main") {
-                // Windows and Linux need an opaque native base below the CSS Mica
-                // layers. Otherwise every semi-transparent surface reveals the
-                // desktop rather than a softly tinted material.
-                #[cfg(not(target_os = "macos"))]
+                #[cfg(target_os = "linux")]
+                configure_linux_native_window(&window).map_err(std::io::Error::other)?;
+
+                // Windows retains its native opaque base. On Linux the CSS
+                // canvas is already opaque; the native surface must be clear
+                // for the rounded edge and client-rendered shadow.
+                #[cfg(target_os = "windows")]
                 window
                     .set_background_color(Some((247, 246, 255, 255).into()))
                     .map_err(std::io::Error::other)?;
 
-                // macOS keeps a transparent native surface so the clipped 12pt
-                // webview layer remains the actual outer window edge.
-                #[cfg(target_os = "macos")]
+                // Keep both the native surface and webview background clear.
+                #[cfg(any(target_os = "macos", target_os = "linux"))]
                 window
                     .set_background_color(Some((0, 0, 0, 0).into()))
                     .map_err(std::io::Error::other)?;
