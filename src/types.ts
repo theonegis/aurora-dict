@@ -1,4 +1,4 @@
-export type SourceId = "local" | "local_llm" | "youdao" | "dictionary" | "vocabulary";
+export type SourceId = "local" | "local_llm" | "youdao" | "dictionary" | "merriam_webster";
 export type ThemeId = "purple" | "red" | "orange" | "yellow" | "green" | "cyan" | "blue" | "violet" | "black";
 export type UiLanguage = "zh" | "en";
 export type FontId = string;
@@ -153,6 +153,7 @@ export interface DisplaySettings {
   font: FontId;
   enabledSources: SourceId[];
   sourceOrder: SourceId[];
+  merriamWebsterApiKey: string;
   localModel: LocalModelId;
   llmDownloadSource: DownloadSourceId;
   dictionarySystemPrompt: string;

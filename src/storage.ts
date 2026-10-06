@@ -31,6 +31,7 @@ export function loadSettings(): DisplaySettings {
     const scale = clamp(Number(stored.scale) || defaultSettings.scale, 0.5, 2);
     const cacheLimit = normaliseCacheLimit(Number(stored.cacheLimit));
     const font = typeof stored.font === "string" && stored.font.trim() ? stored.font : defaultSettings.font;
+    const merriamWebsterApiKey = typeof stored.merriamWebsterApiKey === "string" ? stored.merriamWebsterApiKey.trim().slice(0, 128) : "";
     const localModel = localModels.some((model) => model.id === stored.localModel) ? stored.localModel! : defaultSettings.localModel;
     const llmDownloadSource: DownloadSourceId = stored.llmDownloadSource === "official" ? "official" : "mirror";
     const storedDictionaryPrompt = typeof stored.dictionarySystemPrompt === "string" ? stored.dictionarySystemPrompt.trim() : "";
@@ -41,18 +42,22 @@ export function loadSettings(): DisplaySettings {
     const translationSystemPrompt = storedTranslationPrompt && !LEGACY_TRANSLATION_SYSTEM_PROMPTS.includes(storedTranslationPrompt)
       ? storedTranslationPrompt
       : DEFAULT_TRANSLATION_SYSTEM_PROMPT;
+    const legacyVocabularyEnabled = Array.isArray(stored.enabledSources) && stored.enabledSources.includes("vocabulary" as SourceId);
     const storedSources = Array.isArray(stored.enabledSources)
       ? stored.enabledSources.filter((source, index): source is SourceId => sources.some((item) => item.id === source) && stored.enabledSources!.indexOf(source) === index).slice(0, MAX_ENABLED_SOURCES)
       : [...defaultSettings.enabledSources];
-    const legacyDefaultSources: SourceId[] = ["local", "youdao", "dictionary", "vocabulary"];
-    const enabledSources = legacyDefaultSources.every((source) => storedSources.includes(source)) && storedSources.length === legacyDefaultSources.length
-      ? [...defaultSettings.enabledSources]
-      : storedSources.slice(0, MAX_ENABLED_SOURCES);
+    const enabledSources = [...storedSources];
+    if (legacyVocabularyEnabled) {
+      for (const source of defaultSettings.enabledSources) {
+        if (enabledSources.length >= MAX_ENABLED_SOURCES) break;
+        if (!enabledSources.includes(source)) enabledSources.push(source);
+      }
+    }
     const storedOrder = Array.isArray(stored.sourceOrder)
       ? stored.sourceOrder.filter((source, index): source is SourceId => sources.some((item) => item.id === source) && stored.sourceOrder!.indexOf(source) === index)
       : [];
     return {
-      theme, language, scale, cacheLimit, font, localModel, llmDownloadSource, dictionarySystemPrompt, translationSystemPrompt,
+      theme, language, scale, cacheLimit, font, merriamWebsterApiKey, localModel, llmDownloadSource, dictionarySystemPrompt, translationSystemPrompt,
       enabledSources: enabledSources.length ? enabledSources : ["local"],
       sourceOrder: [...storedOrder, ...sources.map((source) => source.id).filter((source) => !storedOrder.includes(source))],
     };

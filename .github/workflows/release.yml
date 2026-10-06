@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing or new release tag, for example v1.0.0"
+        description: "Existing or new release tag, for example v1.2.0"
         required: true
-        default: "v1.0.0"
+        default: "v1.2.0"
         type: string
 
 permissions:
@@ -82,7 +82,9 @@ jobs:
   macos:
     name: macOS ${{ matrix.name }}
     needs: prepare-release
-    runs-on: macos-14
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     strategy:
       fail-fast: false
       matrix:

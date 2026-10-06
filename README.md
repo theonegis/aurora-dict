@@ -1,6 +1,6 @@
 # Aurora Dict
 
-Aurora Dict 是一款为 Linux 用户而做、也同样适用于 macOS 与 Windows 的中英桌面词典。
+Aurora Dict 是一款为 Linux 用户而做、也同样适用于 macOS 与 Windows 的中英桌面词典。macOS 版本最低支持 macOS 15 Sequoia。
 
 许多 Linux 上可用的词典要么界面陈旧，要么必须依赖网页或复杂的导入流程。这个项目希望提供另一种体验：打开即可使用的离线词库、清晰可靠的中英查询，以及一个安静、精致、不打扰阅读的桌面界面。它使用 Tauri 2 构建，前端采用 React、TypeScript 与 Vite；在保持轻量的同时，将 iOS 的卡片层次与 Windows Mica 的半透明质感带到桌面端。
 
@@ -11,12 +11,12 @@ Aurora Dict 是一款为 Linux 用户而做、也同样适用于 macOS 与 Windo
 - Windows、macOS 与 Linux 的原生桌面窗口，自定义标题栏和统一的窗体圆角。
 - 安装包内置 ECDICT SQLite 离线词库；首次启动自动准备完成，无需用户导入。
 - 中文查英文、英文查中文、英文拼写建议，以及英式/美式音标与发音。
-- 四个可配置来源：本地 ECDICT、有道词典、[Free Dictionary API](https://dictionaryapi.dev/) 与 Vocabulary.com。
+- 五个可配置来源：本地 ECDICT、本地 LLM、有道词典、[FreeDictionaryAPI.com](https://freedictionaryapi.com/) 与 [Merriam-Webster API](https://dictionaryapi.com/)；最多同时启用四个，默认启用前四个。
 - 每次查询会并行获取并缓存启用来源的结果；默认保存最近 100 个单词，可在设置中调整。
 - 独立 SQLite 生词本：查询结果或选中文本可加入，释义、例句与笔记可在生词本中使用 Markdown 编辑；支持自定义保存路径、打开、导入和导出，方便跨设备拷贝使用。
 - 可调中英文界面、主题色、字体、缩放、透明度与材质模糊度。
 
-在线来源不需要 API Key。网络不可用时，本地词典仍可独立工作。
+有道词典与 FreeDictionaryAPI.com 不需要 API Key；Merriam-Webster 需要用户在设置页填写自己的 API Key。FreeDictionaryAPI.com 使用 English Wiktionary 的结构化数据（CC BY-SA 4.0）；网络不可用时，本地词典仍可独立工作。
 
 ## 开发
 
@@ -62,8 +62,8 @@ npm run tauri build
 推送新的 Git tag（或手动运行 Actions）会触发 [发布工作流](.github/workflows/release.yml)。工作流先创建草稿 Release，只有所有平台均构建成功才会公开发布：
 
 ```Shell
-git tag -a v0.x.x -m "Aurora Dict v0.x.x"
-git push origin v0.x.x
+git tag -a v1.2.0 -m "Aurora Dict v1.2.0"
+git push origin v1.2.0
 ```
 
 - macOS ARM64 与 x64 `.dmg`；
@@ -92,6 +92,14 @@ xattr -rd com.apple.quarantine "/Applications/Aurora Dict.app"
 </p>
 
 ## 在线来源说明
+
+FreeDictionaryAPI.com 数据源通过以下无需 API Key 的接口获取 English Wiktionary 结构化数据：
+
+```text
+https://freedictionaryapi.com/api/v1/entries/en/<word>
+```
+
+返回内容遵循其响应中标注的 CC BY-SA 4.0 许可；应用会保留 Wiktionary 来源说明。
 
 有道内容会在 Rust 后端完成结构化提取；其免 Key 发音端点为：
 

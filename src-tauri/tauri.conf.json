@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Aurora Dict",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "identifier": "com.aurora.dictionary",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src 'self' https://dict.youdao.com https://api.dictionaryapi.dev https://www.vocabulary.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://dict.youdao.com https:;"
+      "csp": "default-src 'self'; connect-src 'self' https://dict.youdao.com https://freedictionaryapi.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; media-src 'self' http://dict.youdao.com https:;"
     }
   },
   "bundle": {
@@ -45,6 +45,9 @@
     "shortDescription": "A beautiful, fast bilingual dictionary.",
     "copyright": "Copyright (c) 2026 Zhenyu Tan",
     "license": "PolyForm-Noncommercial-1.0.0",
-    "licenseFile": "../LICENSE"
+    "licenseFile": "../LICENSE",
+    "macOS": {
+      "minimumSystemVersion": "15.0"
+    }
   }
 }

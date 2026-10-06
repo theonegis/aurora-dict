@@ -9,7 +9,9 @@ permissions:
 jobs:
   macos:
     name: macOS ${{ matrix.name }} offline AI
-    runs-on: macos-14
+    runs-on: macos-15
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "15.0"
     strategy:
       fail-fast: false
       matrix:

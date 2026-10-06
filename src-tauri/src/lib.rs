@@ -590,7 +590,11 @@ fn prepare_bundled_dictionary(path: &Path) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn lookup_online(provider: String, query: String) -> Result<OnlineLookup, String> {
+async fn lookup_online(
+    provider: String,
+    query: String,
+    api_key: Option<String>,
+) -> Result<OnlineLookup, String> {
     let query = normalise_query(&query);
     if query.is_empty() {
         return Err("请输入要查询的词或短语。".into());
@@ -598,7 +602,7 @@ async fn lookup_online(provider: String, query: String) -> Result<OnlineLookup, 
     if query.chars().count() > 100 {
         return Err("查询内容过长，请输入一个词或短语。".into());
     }
-    if matches!(provider.as_str(), "dictionary" | "vocabulary") && contains_chinese(&query) {
+    if matches!(provider.as_str(), "dictionary" | "merriam_webster") && contains_chinese(&query) {
         return Err("该英文词典主要提供英文释义；请改用英文单词查询，或切换至有道词典。".into());
     }
 
@@ -617,11 +621,8 @@ async fn lookup_online(provider: String, query: String) -> Result<OnlineLookup, 
             Ok(result)
         }
         "dictionary" => lookup_dictionary_api(&query).await,
-        "vocabulary" => {
-            let source = "Vocabulary.com";
-            let url = format!("https://www.vocabulary.com/dictionary/{encoded}");
-            let page = fetch_source_page(source, &url).await?;
-            parse_vocabulary_com(&page, &query, &url)
+        "merriam_webster" => {
+            lookup_merriam_webster(&query, api_key.as_deref().unwrap_or_default()).await
         }
         _ => Err("未知在线词典来源。".into()),
     }
@@ -664,7 +665,7 @@ async fn youdao_is_available() -> bool {
 
 async fn lookup_dictionary_api(query: &str) -> Result<OnlineLookup, String> {
     let encoded_query = urlencoding::encode(query);
-    let api_url = format!("https://api.dictionaryapi.dev/api/v2/entries/en/{encoded_query}");
+    let api_url = format!("https://freedictionaryapi.com/api/v1/entries/en/{encoded_query}");
     let client = Client::builder()
         .user_agent(USER_AGENT)
         .timeout(Duration::from_secs(12))
@@ -686,6 +687,49 @@ async fn lookup_dictionary_api(query: &str) -> Result<OnlineLookup, String> {
         .await
         .map_err(|error| format!("无法读取 Dictionary API 响应：{error}"))?;
     parse_dictionary_api(&payload, query, &api_url)
+}
+
+async fn lookup_merriam_webster(query: &str, api_key: &str) -> Result<OnlineLookup, String> {
+    let api_key = api_key.trim();
+    if api_key.is_empty() {
+        return Err("请先在设置中填写 Merriam-Webster API Key。".into());
+    }
+    if api_key.len() > 128
+        || !api_key
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err("Merriam-Webster API Key 格式无效，请检查后重试。".into());
+    }
+    let encoded_query = urlencoding::encode(query);
+    let api_url =
+        format!("https://www.dictionaryapi.com/api/v3/references/collegiate/json/{encoded_query}");
+    let client = Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(Duration::from_secs(12))
+        .build()
+        .map_err(|_| "无法建立 Merriam-Webster API 连接。".to_string())?;
+    let response = client
+        .get(&api_url)
+        .query(&[("key", api_key)])
+        .send()
+        .await
+        .map_err(|_| "无法访问 Merriam-Webster API，请检查网络连接。".to_string())?;
+    if matches!(response.status().as_u16(), 401 | 403) {
+        return Err("Merriam-Webster API Key 无效或没有访问权限。".into());
+    }
+    let response = response
+        .error_for_status()
+        .map_err(|_| "Merriam-Webster API 暂时无法响应。".to_string())?;
+    let payload = response
+        .text()
+        .await
+        .map_err(|_| "无法读取 Merriam-Webster API 响应。".to_string())?;
+    let source_url = format!(
+        "https://www.merriam-webster.com/dictionary/{}",
+        urlencoding::encode(query)
+    );
+    parse_merriam_webster_api(&payload, query, &source_url)
 }
 
 fn parse_youdao(page: &str, query: &str, url: &str) -> Result<OnlineLookup, String> {
@@ -1020,145 +1064,298 @@ fn parse_dictionary_api(
     query: &str,
     source_url: &str,
 ) -> Result<OnlineLookup, String> {
-    let entries: serde_json::Value = serde_json::from_str(payload)
+    let response: serde_json::Value = serde_json::from_str(payload)
         .map_err(|error| format!("无法解析 Dictionary API 数据：{error}"))?;
-    let entry = entries
-        .as_array()
-        .and_then(|items| items.first())
+    let entries = response
+        .get("entries")
+        .and_then(|value| value.as_array())
         .ok_or_else(|| format!("Dictionary 未找到“{query}”。"))?;
-    let word = entry
+    if entries.is_empty() {
+        return Err(format!("Dictionary 未找到“{query}”。"));
+    }
+    let word = response
         .get("word")
         .and_then(|value| value.as_str())
         .map(str::to_string)
         .filter(|word| !word.is_empty())
         .unwrap_or_else(|| query.to_string());
-    let fallback_phonetic = entry
-        .get("phonetic")
-        .and_then(|value| value.as_str())
-        .map(str::to_string)
-        .filter(|value| !value.is_empty());
-    let phonetics = entry
-        .get("phonetics")
-        .and_then(|value| value.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let phonetic_text = |item: &serde_json::Value| {
+    let pronunciations = entries
+        .iter()
+        .flat_map(|entry| {
+            entry
+                .get("pronunciations")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    let phonetic_text = |item: &&serde_json::Value| {
+        let is_ipa = item
+            .get("type")
+            .and_then(|value| value.as_str())
+            .map_or(true, |value| value.eq_ignore_ascii_case("ipa"));
+        if !is_ipa {
+            return None;
+        }
         item.get("text")
             .and_then(|value| value.as_str())
             .map(str::to_string)
             .filter(|value| !value.is_empty())
     };
-    let audio_url = |item: &serde_json::Value| {
-        item.get("audio")
-            .and_then(|value| value.as_str())
-            .map(str::to_string)
-            .filter(|value| !value.is_empty())
-    };
-    let us_item = phonetics.iter().find(|item| {
-        audio_url(item)
-            .as_deref()
-            .is_some_and(|audio| audio.to_ascii_lowercase().contains("-us."))
-    });
-    let uk_item = phonetics.iter().find(|item| {
-        audio_url(item).as_deref().is_some_and(|audio| {
-            let audio = audio.to_ascii_lowercase();
-            audio.contains("-uk.") || audio.contains("-gb.")
-        })
-    });
-    let first_item = phonetics.iter().find(|item| phonetic_text(item).is_some());
-    let us_phonetic = us_item
-        .and_then(phonetic_text)
-        .or_else(|| fallback_phonetic.clone())
-        .or_else(|| first_item.and_then(phonetic_text));
-    let uk_phonetic = uk_item
-        .and_then(phonetic_text)
-        .or_else(|| fallback_phonetic.clone())
-        .or_else(|| first_item.and_then(phonetic_text));
-    let us_audio = us_item
-        .and_then(audio_url)
-        .or_else(|| first_item.and_then(audio_url));
-    let uk_audio = uk_item.and_then(audio_url);
-    let senses = entry
-        .get("meanings")
-        .and_then(|value| value.as_array())
-        .map(|meanings| {
-            meanings
-                .iter()
-                .filter_map(|meaning| {
-                    let definitions = meaning
-                        .get("definitions")
-                        .and_then(|value| value.as_array())?
-                        .iter()
-                        .filter_map(|definition| {
-                            definition
-                                .get("definition")
-                                .and_then(|value| value.as_str())
-                        })
-                        .map(str::to_string)
-                        .filter(|definition| !definition.is_empty())
-                        .take(8)
-                        .collect::<Vec<_>>();
-                    (!definitions.is_empty()).then(|| OnlineSense {
-                        part_of_speech: meaning
-                            .get("partOfSpeech")
-                            .and_then(|value| value.as_str())
-                            .unwrap_or("English definition")
-                            .to_string(),
-                        definitions,
-                    })
+    let has_region = |item: &&serde_json::Value, regions: &[&str]| {
+        item.get("tags")
+            .and_then(|value| value.as_array())
+            .is_some_and(|tags| {
+                tags.iter().filter_map(|tag| tag.as_str()).any(|tag| {
+                    let tag = tag.to_ascii_lowercase();
+                    regions.iter().any(|region| tag.contains(region))
                 })
-                .take(6)
-                .collect::<Vec<_>>()
+            })
+    };
+    let fallback_phonetic = pronunciations.iter().find_map(phonetic_text);
+    let us_phonetic = pronunciations
+        .iter()
+        .find(|item| has_region(item, &["american", "canada", "us"]))
+        .and_then(phonetic_text)
+        .or_else(|| fallback_phonetic.clone());
+    let uk_phonetic = pronunciations
+        .iter()
+        .find(|item| {
+            has_region(
+                item,
+                &["received pronunciation", "british", "uk", "england"],
+            )
         })
-        .unwrap_or_default();
+        .and_then(phonetic_text)
+        .or_else(|| fallback_phonetic.clone());
+
+    let mut senses: Vec<OnlineSense> = Vec::new();
+    let mut examples = Vec::new();
+    let mut seen_examples = HashSet::new();
+    for entry in entries {
+        let part_of_speech = entry
+            .get("partOfSpeech")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.is_empty())
+            .unwrap_or("English definition")
+            .to_string();
+        let sense_values = entry
+            .get("senses")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let definitions = sense_values
+            .iter()
+            .filter_map(|sense| sense.get("definition").and_then(|value| value.as_str()))
+            .map(str::to_string)
+            .filter(|definition| !definition.is_empty())
+            .take(8)
+            .collect::<Vec<_>>();
+        if !definitions.is_empty() {
+            if let Some(existing) = senses
+                .iter_mut()
+                .find(|sense| sense.part_of_speech == part_of_speech)
+            {
+                for definition in definitions {
+                    if existing.definitions.len() >= 8 {
+                        break;
+                    }
+                    if !existing.definitions.contains(&definition) {
+                        existing.definitions.push(definition);
+                    }
+                }
+            } else if senses.len() < 6 {
+                senses.push(OnlineSense {
+                    part_of_speech,
+                    definitions,
+                });
+            }
+        }
+        for example in sense_values.iter().flat_map(|sense| {
+            sense
+                .get("examples")
+                .and_then(|value| value.as_array())
+                .into_iter()
+                .flatten()
+                .filter_map(|value| value.as_str())
+        }) {
+            let example = example.trim();
+            if !example.is_empty()
+                && examples.len() < 10
+                && seen_examples.insert(example.to_string())
+            {
+                examples.push(OnlineExample {
+                    english: example.to_string(),
+                    translation: None,
+                    source: None,
+                });
+            }
+        }
+    }
     if senses.is_empty() {
         return Err("Dictionary API 没有返回可展示的释义。".into());
     }
+    let source_page = response
+        .get("source")
+        .and_then(|source| source.get("url"))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(source_url)
+        .to_string();
     Ok(OnlineLookup {
-        source: "Dictionary".into(),
+        source: "FreeDictionaryAPI.com".into(),
         word,
         pronunciation: us_phonetic.clone().or_else(|| uk_phonetic.clone()),
         uk_phonetic,
         us_phonetic,
-        uk_audio,
+        uk_audio: None,
+        us_audio: None,
+        senses,
+        examples,
+        sections: Vec::new(),
+        note: Some("释义来自 English Wiktionary，依据 CC BY-SA 4.0 使用。".into()),
+        source_url: source_page,
+    })
+}
+
+fn parse_merriam_webster_api(
+    payload: &str,
+    query: &str,
+    source_url: &str,
+) -> Result<OnlineLookup, String> {
+    let response: serde_json::Value = serde_json::from_str(payload)
+        .map_err(|error| format!("无法解析 Merriam-Webster API 数据：{error}"))?;
+    let items = response
+        .as_array()
+        .ok_or_else(|| "Merriam-Webster API 返回了无法识别的数据。".to_string())?;
+    if items.first().is_some_and(|item| item.is_string()) {
+        let suggestions = items
+            .iter()
+            .filter_map(|item| item.as_str())
+            .take(5)
+            .collect::<Vec<_>>();
+        let suffix = if suggestions.is_empty() {
+            String::new()
+        } else {
+            format!(" 建议：{}。", suggestions.join("、"))
+        };
+        return Err(format!("Merriam-Webster 未找到“{query}”。{suffix}"));
+    }
+
+    let entries = items
+        .iter()
+        .filter(|item| item.is_object())
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        return Err(format!("Merriam-Webster 未找到“{query}”。"));
+    }
+    let word = entries
+        .first()
+        .and_then(|entry| entry.get("meta"))
+        .and_then(|meta| meta.get("id"))
+        .and_then(|value| value.as_str())
+        .and_then(|value| value.split(':').next())
+        .filter(|value| !value.is_empty())
+        .unwrap_or(query)
+        .replace('*', "");
+
+    let pronunciation_item = entries.iter().find_map(|entry| {
+        entry
+            .get("hwi")
+            .and_then(|hwi| hwi.get("prs"))
+            .and_then(|value| value.as_array())
+            .and_then(|items| items.first())
+    });
+    let pronunciation = pronunciation_item
+        .and_then(|item| item.get("mw"))
+        .and_then(|value| value.as_str())
+        .filter(|value| !value.is_empty())
+        .map(|value| format!("/{value}/"));
+    let us_audio = pronunciation_item
+        .and_then(|item| item.get("sound"))
+        .and_then(|sound| sound.get("audio"))
+        .and_then(|value| value.as_str())
+        .and_then(merriam_webster_audio_url);
+
+    let mut senses: Vec<OnlineSense> = Vec::new();
+    for entry in entries {
+        let part_of_speech = entry
+            .get("fl")
+            .and_then(|value| value.as_str())
+            .filter(|value| !value.is_empty())
+            .unwrap_or("English definition")
+            .to_string();
+        let definitions = entry
+            .get("shortdef")
+            .and_then(|value| value.as_array())
+            .into_iter()
+            .flatten()
+            .filter_map(|value| value.as_str())
+            .map(str::to_string)
+            .filter(|value| !value.is_empty())
+            .take(8)
+            .collect::<Vec<_>>();
+        if definitions.is_empty() {
+            continue;
+        }
+        if let Some(existing) = senses
+            .iter_mut()
+            .find(|sense| sense.part_of_speech == part_of_speech)
+        {
+            for definition in definitions {
+                if existing.definitions.len() >= 8 {
+                    break;
+                }
+                if !existing.definitions.contains(&definition) {
+                    existing.definitions.push(definition);
+                }
+            }
+        } else if senses.len() < 6 {
+            senses.push(OnlineSense {
+                part_of_speech,
+                definitions,
+            });
+        }
+    }
+    if senses.is_empty() {
+        return Err("Merriam-Webster API 没有返回可展示的释义。".into());
+    }
+
+    Ok(OnlineLookup {
+        source: "Merriam-Webster".into(),
+        word,
+        pronunciation: pronunciation.clone(),
+        uk_phonetic: None,
+        us_phonetic: pronunciation,
+        uk_audio: None,
         us_audio,
         senses,
         examples: Vec::new(),
         sections: Vec::new(),
-        note: Some("通过无需 API Key 的 Free Dictionary API 查询。".into()),
+        note: Some("释义与发音来自 Merriam-Webster Collegiate Dictionary API。".into()),
         source_url: source_url.to_string(),
     })
 }
 
-fn parse_vocabulary_com(page: &str, query: &str, url: &str) -> Result<OnlineLookup, String> {
-    let document = Html::parse_document(page);
-    let word = first_text(&document, &["#hdr-word-area", ".word-area h1"])
-        .unwrap_or_else(|| query.to_string());
-    let definitions = unique_texts(&document, &[".word-definitions .sense > .definition"], 12);
-    if definitions.is_empty() {
-        return Err("Vocabulary.com 未返回可识别的释义，可能是页面结构或访问策略已更新。".into());
+fn merriam_webster_audio_url(audio: &str) -> Option<String> {
+    let audio = audio.trim();
+    if audio.is_empty() {
+        return None;
     }
-    let part_of_speech = first_text(&document, &[".word-definitions .sense .pos-icon"])
-        .unwrap_or_else(|| "English definition".into());
-    let (uk_phonetic, us_phonetic, uk_audio, us_audio) = vocabulary_pronunciations(&document);
-    let pronunciation = us_phonetic.clone().or_else(|| uk_phonetic.clone());
-    Ok(OnlineLookup {
-        source: "Vocabulary.com".into(),
-        word,
-        pronunciation,
-        uk_phonetic,
-        us_phonetic,
-        uk_audio,
-        us_audio,
-        senses: vec![OnlineSense {
-            part_of_speech,
-            definitions,
-        }],
-        examples: Vec::new(),
-        sections: Vec::new(),
-        note: Some("在线内容经结构化提取后呈现；释义以原网页为准。".into()),
-        source_url: url.to_string(),
-    })
+    let lower = audio.to_ascii_lowercase();
+    let first = lower.chars().next()?;
+    let subdirectory = if lower.starts_with("bix") {
+        "bix".to_string()
+    } else if lower.starts_with("gg") {
+        "gg".to_string()
+    } else if first.is_ascii_digit() || !first.is_ascii_alphabetic() {
+        "number".to_string()
+    } else {
+        first.to_string()
+    };
+    Some(format!(
+        "https://media.merriam-webster.com/audio/prons/en/us/mp3/{subdirectory}/{audio}.mp3"
+    ))
 }
 
 fn labelled_phonetics(values: &[String]) -> (Option<String>, Option<String>) {
@@ -1185,74 +1382,6 @@ fn tidy_phonetic(value: &str) -> Option<String> {
         })
         .trim();
     (!value.is_empty()).then(|| value.to_string())
-}
-
-fn vocabulary_pronunciations(
-    document: &Html,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let group_selector = Selector::parse(".video-with-label").unwrap();
-    let label_selector = Selector::parse(".region-label").unwrap();
-    let phonetic_selector = Selector::parse(".span-replace-h3").unwrap();
-    let audio_selector = Selector::parse("source[src]").unwrap();
-    let mut uk_phonetic = None;
-    let mut us_phonetic = None;
-    let mut uk_audio = None;
-    let mut us_audio = None;
-    for group in document.select(&group_selector) {
-        let label = group
-            .select(&label_selector)
-            .next()
-            .map(|element| clean_text(element.text().collect::<Vec<_>>().join(" ")))
-            .unwrap_or_default()
-            .to_ascii_uppercase();
-        let phonetic = group
-            .select(&phonetic_selector)
-            .next()
-            .and_then(|element| tidy_phonetic(&element.text().collect::<Vec<_>>().join(" ")));
-        let audio = group
-            .select(&audio_selector)
-            .next()
-            .and_then(|element| element.value().attr("src"))
-            .map(str::to_string);
-        if label == "UK" {
-            uk_phonetic = phonetic.or(uk_phonetic);
-            uk_audio = audio.or(uk_audio);
-        } else if label == "US" {
-            us_phonetic = phonetic.or(us_phonetic);
-            us_audio = audio.or(us_audio);
-        }
-    }
-
-    if uk_phonetic.is_none() || us_phonetic.is_none() {
-        let ipa_selector = Selector::parse(".ipa-with-audio").unwrap();
-        let phonetic_selector = Selector::parse(".span-replace-h3").unwrap();
-        let audio_selector = Selector::parse("audio.pron-audio[src]").unwrap();
-        for group in document.select(&ipa_selector) {
-            let markup = group.html();
-            let phonetic = group
-                .select(&phonetic_selector)
-                .next()
-                .and_then(|element| tidy_phonetic(&element.text().collect::<Vec<_>>().join(" ")));
-            let audio = group
-                .select(&audio_selector)
-                .next()
-                .and_then(|element| element.value().attr("src"))
-                .map(str::to_string);
-            if markup.contains("uk-flag-icon") {
-                uk_phonetic = phonetic.or(uk_phonetic);
-                uk_audio = audio.or(uk_audio);
-            } else if markup.contains("us-flag-icon") {
-                us_phonetic = phonetic.or(us_phonetic);
-                us_audio = audio.or(us_audio);
-            }
-        }
-    }
-    (uk_phonetic, us_phonetic, uk_audio, us_audio)
 }
 
 fn first_text(document: &Html, selectors: &[&str]) -> Option<String> {
@@ -1353,27 +1482,76 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_api_parser_keeps_definitions_and_us_audio() {
+    fn dictionary_api_parser_keeps_regional_ipa_definitions_examples_and_source() {
+        let payload = r#"{
+          "word": "serendipity",
+          "entries": [{
+            "partOfSpeech": "noun",
+            "pronunciations": [
+              {"type": "ipa", "text": "/ˌsɛɹənˈdɪpəti/", "tags": ["General American"]},
+              {"type": "ipa", "text": "/ˌsɛɹənˈdɪpɪti/", "tags": ["Received Pronunciation"]}
+            ],
+            "senses": [{
+              "definition": "A fortunate discovery.",
+              "examples": ["It was pure serendipity."]
+            }]
+          }],
+          "source": {
+            "url": "https://en.wiktionary.org/wiki/serendipity",
+            "license": {"name": "CC BY-SA 4.0"}
+          }
+        }"#;
+        let result = parse_dictionary_api(payload, "serendipity", "https://example.test").unwrap();
+        assert_eq!(result.source, "FreeDictionaryAPI.com");
+        assert_eq!(result.us_phonetic.as_deref(), Some("/ˌsɛɹənˈdɪpəti/"));
+        assert_eq!(result.uk_phonetic.as_deref(), Some("/ˌsɛɹənˈdɪpɪti/"));
+        assert!(result.us_audio.is_none());
+        assert_eq!(result.senses[0].definitions, ["A fortunate discovery."]);
+        assert_eq!(result.examples[0].english, "It was pure serendipity.");
+        assert_eq!(
+            result.source_url,
+            "https://en.wiktionary.org/wiki/serendipity"
+        );
+    }
+
+    #[test]
+    fn merriam_webster_parser_keeps_short_definitions_and_audio() {
         let payload = r#"[
           {
-            "word": "serendipity",
-            "phonetic": "/ˌsɛrənˈdɪpəti/",
-            "phonetics": [
-              {"text": "/ˌsɛrənˈdɪpəti/", "audio": "https://example.test/serendipity-us.mp3"}
-            ],
-            "meanings": [{
-              "partOfSpeech": "noun",
-              "definitions": [{"definition": "a fortunate discovery"}]
-            }]
+            "meta": {"id": "referral:1"},
+            "hwi": {"hw": "re*fer*ral", "prs": [{"mw": "ri-ˈfər-əl", "sound": {"audio": "referr01"}}]},
+            "fl": "noun",
+            "shortdef": ["the act, action, or an instance of referring", "one that is referred"]
           }
         ]"#;
-        let result = parse_dictionary_api(payload, "serendipity", "https://example.test").unwrap();
-        assert_eq!(result.source, "Dictionary");
+        let result = parse_merriam_webster_api(
+            payload,
+            "referral",
+            "https://www.merriam-webster.com/dictionary/referral",
+        )
+        .unwrap();
+        assert_eq!(result.source, "Merriam-Webster");
+        assert_eq!(result.word, "referral");
+        assert_eq!(result.us_phonetic.as_deref(), Some("/ri-ˈfər-əl/"));
         assert_eq!(
             result.us_audio.as_deref(),
-            Some("https://example.test/serendipity-us.mp3")
+            Some("https://media.merriam-webster.com/audio/prons/en/us/mp3/r/referr01.mp3")
         );
-        assert_eq!(result.senses[0].definitions, ["a fortunate discovery"]);
+        assert_eq!(result.senses[0].part_of_speech, "noun");
+        assert_eq!(result.senses[0].definitions.len(), 2);
+    }
+
+    #[test]
+    fn merriam_webster_parser_reports_spelling_suggestions() {
+        let error = parse_merriam_webster_api(
+            r#"["referral", "reversal"]"#,
+            "refarral",
+            "https://example.test",
+        )
+        .err()
+        .unwrap();
+        assert!(error.contains("referral"));
+        assert!(error.contains("reversal"));
     }
 
     #[test]

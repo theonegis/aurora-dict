@@ -11,7 +11,7 @@ export const sources: Array<{ id: SourceId; title: CopyKey; subtitle: CopyKey }>
   { id: "local_llm", title: "localLlmSourceTitle", subtitle: "localLlmSourceSubtitle" },
   { id: "youdao", title: "youdaoSourceTitle", subtitle: "youdaoSourceSubtitle" },
   { id: "dictionary", title: "dictionarySourceTitle", subtitle: "dictionarySourceSubtitle" },
-  { id: "vocabulary", title: "vocabularySourceTitle", subtitle: "vocabularySourceSubtitle" },
+  { id: "merriam_webster", title: "merriamWebsterSourceTitle", subtitle: "merriamWebsterSourceSubtitle" },
 ];
 
 export const localModels: Array<{ id: LocalModelId; name: string; description: CopyKey; footprint: CopyKey; recommended?: boolean }> = [
@@ -44,6 +44,7 @@ export const LEGACY_TRANSLATION_SYSTEM_PROMPTS: readonly string[] = promptConfig
 export const defaultSettings: DisplaySettings = {
   theme: "purple", language: "zh", scale: 1, font: SYSTEM_FONT_ID,
   enabledSources: ["local", "local_llm", "youdao", "dictionary"], sourceOrder: sources.map((source) => source.id),
+  merriamWebsterApiKey: "",
   localModel: "qwen3-0.6b", llmDownloadSource: "mirror", dictionarySystemPrompt: DEFAULT_DICTIONARY_SYSTEM_PROMPT,
   translationSystemPrompt: DEFAULT_TRANSLATION_SYSTEM_PROMPT, cacheLimit: DEFAULT_CACHE_LIMIT,
 };

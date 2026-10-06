@@ -405,8 +405,8 @@ function OnlineCard({ result, query, source, youdaoSection, setYoudaoSection, ex
   const senses = activeSection?.senses ?? result.senses;
   const examples = activeSection?.examples ?? result.examples;
   const sectionId = activeSection?.id;
-  const displaySource = result.source === "有道词典" ? t("youdaoSourceTitle") : result.source === "Vocabulary.com" ? t("vocabularySourceTitle") : result.source;
-  const note = result.source === "有道词典" ? t("youdaoNote") : result.source === "Dictionary" ? t("dictionaryNote") : t("genericOnlineNote");
+  const displaySource = result.source === "有道词典" ? t("youdaoSourceTitle") : result.source;
+  const note = result.source === "有道词典" ? t("youdaoNote") : result.source === "FreeDictionaryAPI.com" ? t("dictionaryNote") : result.source === "Merriam-Webster" ? t("merriamWebsterNote") : t("genericOnlineNote");
   return <section className="entry-card online-entry"><div className="entry-card-head"><div><div className="word-line"><h2>{displayHeadword(result.word, query)}</h2></div>
     <PronunciationRow word={result.word} fallbackPhonetic={result.pronunciation} ukPhonetic={result.ukPhonetic} usPhonetic={result.usPhonetic} ukAudio={result.ukAudio} usAudio={result.usAudio} stripOuterSlashes t={t} />
     <p className="source-credit">{formatText(t, "structuredSource", { source: displaySource })}</p></div><div className="entry-card-tools"><span className="online-mark">{t("onlineMark")}</span><VocabularyAddButton added={added} add={() => addVocabulary(onlineVocabularyDraft(result, senses, examples, t))} t={t} /></div></div>
@@ -452,7 +452,7 @@ function DictionaryPanel({ state, activeSources, inputValue, setInputValue, sugg
   return <>
     <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
       {suggestions && suggestions.suggestions.length > 0 && <div className="input-suggestions" role="listbox" aria-label={t("inputSuggestions")}>{suggestions.correction && <span className="input-suggestions-label">{t("spellingCorrection")}</span>}<div className="input-suggestions-list">{suggestions.suggestions.map((word) => <button type="button" key={word} onClick={() => submit(word)}><span>{word}</span></button>)}</div></div>}
-    </form><div className="search-hint"><span /><span>{t("searchHint")}</span><kbd><i className="fa-solid fa-turn-down" aria-hidden="true" /></kbd></div></section>
+    </form><div className="search-hint"><span /><span>{t("searchHint")}</span></div></section>
     <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher" style={{ "--source-count": activeSources.length } as CSSProperties}>{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
       <div className="active-source-line"><span className="active-dot" /><span>{t(active.title)}</span><i /><span>{t(active.subtitle)}</span></div></section>
     <section className="results-stage" aria-live="polite"><ResultStage state={state} retry={retry} toggleExpanded={toggleExpanded} setYoudaoSection={setYoudaoSection} addVocabulary={addVocabulary} vocabularyWords={vocabularyWords} t={t} /></section>
@@ -541,12 +541,15 @@ function SourceOrderList({ settings, updateSettings, t }: { settings: DisplaySet
     const source = sources.find((item) => item.id === sourceId);
     if (!source) return null;
     const enabled = settings.enabledSources.includes(sourceId);
-    const disabled = !enabled && sourceLimitReached;
+    const disabled = (!enabled && sourceLimitReached) || (enabled && settings.enabledSources.length === 1);
     return <label className={`source-setting-option ${dragOver === sourceId ? "is-drag-over" : ""} ${disabled ? "is-disabled" : ""}`} data-source-order={sourceId} key={sourceId}
       onDragOver={(event) => { if (draggedSource.current && draggedSource.current !== sourceId) { event.preventDefault(); dragTarget.current = sourceId; setDragOver(sourceId); } }}
       onDrop={(event) => { event.preventDefault(); if (draggedSource.current) reorder(draggedSource.current, sourceId); draggedSource.current = null; dragTarget.current = null; setDragOver(null); }}>
       <input type="checkbox" checked={enabled} disabled={disabled} onChange={(event) => updateSettings((current) => {
-        if (!event.target.checked) return { ...current, enabledSources: current.enabledSources.filter((item) => item !== sourceId) };
+        if (!event.target.checked) {
+          if (current.enabledSources.length === 1) return current;
+          return { ...current, enabledSources: current.enabledSources.filter((item) => item !== sourceId) };
+        }
         if (current.enabledSources.includes(sourceId) || current.enabledSources.length >= MAX_ENABLED_SOURCES) return current;
         return { ...current, enabledSources: [...current.enabledSources, sourceId] };
       })} />
@@ -582,6 +585,7 @@ function SettingsPanel({ state, fonts, updateSettings, setTab, setPanel, downloa
     </section>}
     {state.settingsTab === "dictionary" && <section className="settings-module settings-card" role="tabpanel" aria-labelledby="dictionary-section-title"><h3 id="dictionary-section-title" className="settings-module-heading">{t("dictionarySettings")}</h3>
       <section className="settings-section source-settings-section"><div className="settings-label"><span>{t("displayedDictionaries")}</span><small>{t("defaultFour")}</small></div><SourceOrderList settings={settings} updateSettings={updateSettings} t={t} /></section>
+      <section className="settings-section api-key-section"><label className="api-key-setting" htmlFor="merriam-webster-api-key"><span className="settings-label"><span>{t("merriamWebsterApiKey")}</span><small>{t("merriamWebsterApiKeyHint")}</small></span><input id="merriam-webster-api-key" type="password" autoComplete="off" maxLength={128} spellCheck={false} value={settings.merriamWebsterApiKey} placeholder={t("merriamWebsterApiKeyPlaceholder")} onChange={(event) => updateSettings((current) => ({ ...current, merriamWebsterApiKey: event.target.value }))} /></label></section>
       <section className="settings-section local-model-section"><div className="settings-label"><span>{t("localAiModels")}</span><small>{t("localAiModelsHint")}</small></div>
         <label className="model-download-source" htmlFor="llm-download-source"><span className="model-download-source-label">{t("modelDownloadSource")} <small className="model-download-source-hint">{t("mirrorDownloadHint")}</small></span><div className="native-select-wrap"><select id="llm-download-source" className="settings-select" value={settings.llmDownloadSource} onChange={(event) => updateSettings((current) => ({ ...current, llmDownloadSource: event.target.value === "official" ? "official" : "mirror" }))} aria-label={t("modelDownloadSource")}><option value="mirror">{t("mirrorDownloadSource")}</option><option value="official">{t("officialDownloadSource")}</option></select><i className="native-select-icon fa-solid fa-chevron-down" aria-hidden="true" /></div></label>
         <div className="local-model-grid" role="radiogroup" aria-label={t("localAiModels")}>{localModels.map((model) => {
@@ -625,7 +629,7 @@ async function fetchSourceLookup(source: SourceId, query: string, settings: Disp
     }
     return { type: "llm", result: { word: query, modelId: settings.localModel, modelName: localModels.find((model) => model.id === settings.localModel)?.name ?? "Qwen3-0.6B", content: "释义：本地 AI 词典结果会在桌面应用中生成。\n用法：浏览器预览不会加载本地模型。", note: t("localAiNote"), promptFingerprint: fingerprint } };
   }
-  return { type: "online", result: await invoke<OnlineLookup>("lookup_online", { provider: source, query }) };
+  return { type: "online", result: await invoke<OnlineLookup>("lookup_online", { provider: source, query, apiKey: source === "merriam_webster" ? settings.merriamWebsterApiKey : null }) };
 }
 
 function activeSourcesFor(settings: DisplaySettings) {
