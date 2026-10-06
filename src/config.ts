@@ -29,7 +29,11 @@ export const themes: Array<{ id: ThemeId; label: CopyKey; color: string }> = [
 ];
 
 export const SYSTEM_FONT_ID = "system";
-export const systemFontStack = '-apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", Inter, sans-serif';
+export const systemFontStacks = {
+  windows: 'system-ui, "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", sans-serif',
+  macos: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif',
+  linux: 'system-ui, "Noto Sans", "Noto Sans CJK SC", sans-serif',
+} as const;
 export const SETTINGS_STORAGE_KEY = "aurora-dictionary-display-settings";
 export const QUERY_CACHE_DATABASE = "aurora-dictionary-query-cache";
 export const QUERY_CACHE_STORE = "query-results";
@@ -42,7 +46,7 @@ export const LEGACY_DICTIONARY_SYSTEM_PROMPTS: readonly string[] = promptConfigu
 export const LEGACY_TRANSLATION_SYSTEM_PROMPTS: readonly string[] = promptConfiguration.legacyTranslationSystemPrompts;
 
 export const defaultSettings: DisplaySettings = {
-  theme: "purple", language: "zh", scale: 1, font: SYSTEM_FONT_ID,
+  theme: "cyan", language: "zh", scale: 1, font: SYSTEM_FONT_ID,
   enabledSources: ["local", "local_llm", "youdao", "dictionary"], sourceOrder: sources.map((source) => source.id),
   merriamWebsterApiKey: "",
   localModel: "qwen3-0.6b", llmDownloadSource: "mirror", dictionarySystemPrompt: DEFAULT_DICTIONARY_SYSTEM_PROMPT,

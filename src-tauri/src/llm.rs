@@ -983,6 +983,7 @@ async fn complete_local_request(
             .and_then(|choice| choice.message.content)
             .unwrap_or_default();
         visible_content = strip_thinking_content(&raw_content);
+        validate_generated_content(&visible_content)?;
         if !visible_content.is_empty() {
             first_token_ms = Some(elapsed_millis(started));
             emit_stream_update(
@@ -998,6 +999,7 @@ async fn complete_local_request(
         }
     }
     let content = strip_thinking_content(&raw_content);
+    validate_generated_content(&content)?;
     if content.is_empty() {
         return Err("本地 AI 没有返回可展示的内容。".to_string());
     }
@@ -1061,6 +1063,7 @@ fn process_stream_line(
     }) {
         raw_content.push_str(&content);
         let next_visible = visible_stream_content(raw_content);
+        validate_generated_content(&next_visible)?;
         if next_visible != *visible_content {
             if first_token_ms.is_none() && !next_visible.is_empty() {
                 *first_token_ms = Some(elapsed_millis(started));
@@ -1159,6 +1162,24 @@ fn strip_thinking_content(content: &str) -> String {
     clean_answer(without_thinking)
 }
 
+// Stop a broken inference stream before it fills the UI or enters the query cache.
+fn validate_generated_content(content: &str) -> Result<(), String> {
+    let mut previous = None;
+    let mut run = 0;
+    for character in content.chars() {
+        if previous == Some(character) {
+            run += 1;
+        } else {
+            previous = Some(character);
+            run = 1;
+        }
+        if run >= 32 && !character.is_whitespace() {
+            return Err("本地 AI 推理异常：输出了大量重复字符。请重启应用后重试；若仍出现，请检查模型文件及推理引擎。".into());
+        }
+    }
+    Ok(())
+}
+
 fn clean_answer(content: &str) -> String {
     content
         .trim()
@@ -1228,6 +1249,17 @@ async fn ensure_server(
         .port();
     drop(listener);
     let mut command = Command::new(engine);
+    // This engine's Metal path produces corrupt output on Intel Iris GPUs.
+    // Disabling layers alone still allows KV/host operations to use Metal.
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    command.args([
+        "--device",
+        "none",
+        "--gpu-layers",
+        "0",
+        "--no-kv-offload",
+        "--no-op-offload",
+    ]);
     command
         .args([
             "-m",
@@ -1300,6 +1332,18 @@ mod tests {
         translation_needs_retry, translation_user_prompt, visible_stream_content, LlamaTimings,
         TranslationDirection,
     };
+
+    #[test]
+    fn rejects_repeated_output_even_after_a_valid_prefix() {
+        assert!(super::validate_generated_content(&"@".repeat(32)).is_err());
+        assert!(
+            super::validate_generated_content(&format!("释义：阻止\n{}", "@".repeat(32))).is_err()
+        );
+        assert!(super::validate_generated_content(&"啊".repeat(32)).is_err());
+        assert!(super::validate_generated_content(&"@".repeat(31)).is_ok());
+        assert!(super::validate_generated_content("联系：user@example.com；释义：阻止。").is_ok());
+        assert!(super::validate_generated_content(&" ".repeat(64)).is_ok());
+    }
 
     #[test]
     fn loads_prompts_from_the_shared_configuration() {

@@ -8,6 +8,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { getSystemFonts } from "tauri-plugin-system-fonts-api";
 import { Icon } from "./Icon";
 import { VocabularyPanel } from "./VocabularyPanel";
+import { playPronunciation } from "./audio";
 import {
   CACHE_LIMIT_OPTIONS,
   DEFAULT_DICTIONARY_SYSTEM_PROMPT,
@@ -19,7 +20,7 @@ import {
   initialFonts,
   localModels,
   sources,
-  systemFontStack,
+  systemFontStacks,
   themes,
 } from "./config";
 import type { CopyKey } from "./config";
@@ -62,6 +63,13 @@ const homepageUrl = "https://theonegis.github.io";
 function isTauri(): boolean { return "__TAURI_INTERNALS__" in window; }
 function isMac(): boolean { return /Mac|iPhone|iPad|iPod/.test(navigator.platform); }
 function isWindows(): boolean { return /Win/.test(navigator.platform); }
+function platformName(): keyof typeof systemFontStacks {
+  if (["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) {
+    const preview = new URLSearchParams(window.location.search).get("platform");
+    if (preview === "windows" || preview === "macos" || preview === "linux") return preview;
+  }
+  return isWindows() ? "windows" : isMac() ? "macos" : "linux";
+}
 function isEnglishInput(value: string): boolean { return /^[a-z][a-z' -]*$/i.test(value.trim()); }
 function clamp(value: number, minimum: number, maximum: number): number { return Math.min(Math.max(value, minimum), maximum); }
 
@@ -80,7 +88,8 @@ function promptFingerprint(prompt: string, fallback: string): string {
     hash ^= content.charCodeAt(index);
     hash = Math.imul(hash, 16_777_619);
   }
-  return (hash >>> 0).toString(16).padStart(8, "0");
+  // Invalidate AI answers cached before the Intel Mac inference fix.
+  return `inference-v2:${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 function formatBytes(bytes: number): string {
@@ -212,20 +221,6 @@ function SelectionLookupMenu({ menu, copySelection, lookup, addVocabulary, paste
   </div>;
 }
 
-async function playPronunciation(word: string, language: string, audioUrl = ""): Promise<void> {
-  if (audioUrl) {
-    const audio = new Audio(audioUrl);
-    audio.preload = "auto";
-    try { await audio.play(); return; } catch { /* Use the system voice below. */ }
-  }
-  if (!("speechSynthesis" in window) || !word) return;
-  const utterance = new SpeechSynthesisUtterance(word);
-  utterance.lang = language;
-  utterance.voice = window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().startsWith(language.toLowerCase())) ?? null;
-  window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
-}
-
 function displayHeadword(word: string, query: string): string {
   const dictionaryWord = word.trim();
   const submittedQuery = query.trim();
@@ -291,15 +286,14 @@ function TitleBar({ t }: { t: Translator }) {
 }
 
 function Hero({ panel, setPanel, t }: { panel: PanelId; setPanel: (panel: PanelId) => void; t: Translator }) {
-  const suppressClickedTooltip = (event: ReactPointerEvent<HTMLButtonElement>) => { event.currentTarget.dataset.tooltipSuppressed = "true"; };
-  const resetTooltip = (event: ReactPointerEvent<HTMLButtonElement>) => { delete event.currentTarget.dataset.tooltipSuppressed; };
+  const panelTitle = panel === "dictionary" ? t("quickDictionaryTip") : panel === "translation" ? t("quickTranslationTip") : panel === "vocabulary" ? t("quickVocabularyTip") : t("quickSettingsTip");
   return <section className="hero">
-    <div><p className="eyebrow">SLOW LOOKUP · FAST ANSWER</p><h1>{t("heroBefore")}<em>{t("heroEmphasis")}</em></h1><p className="hero-copy">{t("heroCopy")}</p></div>
+    <h1 className={panel === "dictionary" ? undefined : "sr-only"}>{panelTitle}</h1>
     <nav className="quick-actions" aria-label={t("mainNavigation")}>
-      <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "dictionary" ? "page" : undefined} aria-label={t("quickDictionaryTip")} data-tooltip={t("quickDictionaryTip")}><i className="fa-solid fa-house" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "translation" ? "page" : undefined} aria-label={t("quickTranslationTip")} data-tooltip={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "vocabulary" ? "is-active" : ""}`} onClick={() => setPanel("vocabulary")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "vocabulary" ? "page" : undefined} aria-label={t("quickVocabularyTip")} data-tooltip={t("quickVocabularyTip")}><i className="fa-solid fa-book-bookmark" aria-hidden="true" /></button>
-      <button className={`quick-action ${panel === "settings" ? "is-active" : ""}`} onClick={() => setPanel("settings")} onPointerDown={suppressClickedTooltip} onPointerEnter={resetTooltip} onPointerLeave={resetTooltip} type="button" aria-current={panel === "settings" ? "page" : undefined} aria-label={t("quickSettingsTip")} data-tooltip={t("quickSettingsTip")}><i className="fa-solid fa-sliders" aria-hidden="true" /></button>
+      <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} type="button" aria-current={panel === "dictionary" ? "page" : undefined} aria-label={t("quickDictionaryTip")} title={t("quickDictionaryTip")}><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><span>{t("quickDictionaryTip")}</span></button>
+      <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} type="button" aria-current={panel === "translation" ? "page" : undefined} aria-label={t("quickTranslationTip")} title={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /><span>{t("quickTranslationTip")}</span></button>
+      <button className={`quick-action ${panel === "vocabulary" ? "is-active" : ""}`} onClick={() => setPanel("vocabulary")} type="button" aria-current={panel === "vocabulary" ? "page" : undefined} aria-label={t("quickVocabularyTip")} title={t("quickVocabularyTip")}><i className="fa-solid fa-book-bookmark" aria-hidden="true" /><span>{t("quickVocabularyTip")}</span></button>
+      <button className={`quick-action ${panel === "settings" ? "is-active" : ""}`} onClick={() => setPanel("settings")} type="button" aria-current={panel === "settings" ? "page" : undefined} aria-label={t("quickSettingsTip")} title={t("quickSettingsTip")}><i className="fa-solid fa-sliders" aria-hidden="true" /><span>{t("quickSettingsTip")}</span></button>
     </nav>
   </section>;
 }
@@ -447,14 +441,13 @@ function ResultStage({ state, retry, toggleExpanded, setYoudaoSection, addVocabu
 function DictionaryPanel({ state, activeSources, inputValue, setInputValue, suggestions, submit, selectSource, ensureSource, retry, toggleExpanded, setYoudaoSection, addVocabulary, vocabularyWords, t }: {
   state: AppState; activeSources: typeof sources; inputValue: string; setInputValue: (value: string) => void; suggestions: LocalSuggestions | null; submit: (value: string) => void; selectSource: (source: SourceId) => void; ensureSource: (source: SourceId) => void; retry: () => void; toggleExpanded: (key: string) => void; setYoudaoSection: (section: string) => void; addVocabulary: (entry: VocabularyEntryInput) => void; vocabularyWords: Set<string>; t: Translator;
 }) {
-  const active = activeSources.find((source) => source.id === state.source) ?? activeSources[0];
   const handleSubmit = (event: FormEvent) => { event.preventDefault(); submit(inputValue); };
   return <>
-    <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
+    <section className="lookup-zone" aria-label={t("lookupAria")}><form className="search-box" onSubmit={handleSubmit}><span className="search-icon"><Icon name="search" size={22} /></span><input value={inputValue} onChange={(event) => setInputValue(event.target.value)} autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} autoFocus placeholder={t("searchPlaceholder")} aria-label={t("searchInputAria")} /><button className="search-submit" type="submit">{t("search")}</button>
       {suggestions && suggestions.suggestions.length > 0 && <div className="input-suggestions" role="listbox" aria-label={t("inputSuggestions")}>{suggestions.correction && <span className="input-suggestions-label">{t("spellingCorrection")}</span>}<div className="input-suggestions-list">{suggestions.suggestions.map((word) => <button type="button" key={word} onClick={() => submit(word)}><span>{word}</span></button>)}</div></div>}
-    </form><div className="search-hint"><span /><span>{t("searchHint")}</span></div></section>
+    </form></section>
     <section className="source-section" aria-label={t("selectSource")}><div className="source-switcher" style={{ "--source-count": activeSources.length } as CSSProperties}>{activeSources.map((source) => <button className={`source-tab ${state.source === source.id ? "is-active" : ""}`} key={source.id} type="button" onClick={() => { selectSource(source.id); ensureSource(source.id); }}><span className="source-tab-title">{t(source.title)}</span><span className="source-tab-caption">{t(source.subtitle)}</span></button>)}</div>
-      <div className="active-source-line"><span className="active-dot" /><span>{t(active.title)}</span><i /><span>{t(active.subtitle)}</span></div></section>
+    </section>
     <section className="results-stage" aria-live="polite"><ResultStage state={state} retry={retry} toggleExpanded={toggleExpanded} setYoudaoSection={setYoudaoSection} addVocabulary={addVocabulary} vocabularyWords={vocabularyWords} t={t} /></section>
   </>;
 }
@@ -674,11 +667,12 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement;
+    const platform = platformName();
     root.dataset.theme = state.settings.theme;
-    root.dataset.platform = isWindows() ? "windows" : isMac() ? "macos" : "linux";
+    root.dataset.platform = platform;
     root.lang = state.settings.language === "zh" ? "zh-CN" : "en";
     root.style.setProperty("--ui-scale", state.settings.scale.toFixed(2));
-    const defaultFont = isWindows() ? '"Aurora Windows Chinese", Aptos, Arial, sans-serif' : systemFontStack;
+    const defaultFont = systemFontStacks[platform];
     const font = state.settings.font === SYSTEM_FONT_ID ? defaultFont : `"${state.settings.font.replaceAll('"', '\\"')}", ${defaultFont}`;
     root.style.setProperty("--ui-font", font);
     root.style.setProperty("--word-font", font);
@@ -687,7 +681,20 @@ export default function App() {
   useEffect(() => {
     if (!isTauri()) return;
     let cancelled = false;
+    let stopListening: (() => void) | undefined;
+    const appWindow = getCurrentWindow();
+    const syncWindowFrame = async () => {
+      const [maximized, fullscreen] = await Promise.all([
+        appWindow.isMaximized(), appWindow.isFullscreen(),
+      ]);
+      if (!cancelled) document.documentElement.dataset.windowExpanded = String(maximized || fullscreen);
+    };
+    void appWindow.onResized(() => { void syncWindowFrame().catch(() => undefined); }).then((unlisten) => {
+      if (cancelled) unlisten();
+      else stopListening = unlisten;
+    }).catch(() => undefined);
     const revealWindowAfterFirstPaint = async () => {
+      await syncWindowFrame();
       // A hidden WebView may suspend requestAnimationFrame entirely. The effect
       // itself already runs after React commits the first DOM tree, so only give
       // fonts a short opportunity to settle before revealing the native window.
@@ -696,12 +703,62 @@ export default function App() {
         new Promise<void>((resolve) => window.setTimeout(resolve, 250)),
       ]);
       if (cancelled) return;
-      const appWindow = getCurrentWindow();
       await appWindow.show();
       await appWindow.setFocus();
     };
     void revealWindowAfterFirstPaint().catch(() => undefined);
-    return () => { cancelled = true; };
+    return () => { cancelled = true; stopListening?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri() || platformName() !== "linux") return;
+    const root = document.documentElement;
+    // Include the visible edge, not just the transparent shadow gutter.
+    // Coordinates are viewport pixels, so hit targets stay usable at any UI scale.
+    const resizeDirection = (event: PointerEvent) => {
+      if (root.dataset.windowExpanded === "true" || root.dataset.windowTiled === "true") return null;
+      const shell = document.querySelector(".app-shell")?.getBoundingClientRect();
+      if (!shell) return null;
+      const { clientX: x, clientY: y } = event;
+      const corner = 16;
+      const edge = 6;
+      if (x <= shell.left + corner && y <= shell.top + corner) return "NorthWest";
+      if (x >= shell.right - corner && y <= shell.top + corner) return "NorthEast";
+      if (x <= shell.left + corner && y >= shell.bottom - corner) return "SouthWest";
+      if (x >= shell.right - corner && y >= shell.bottom - corner) return "SouthEast";
+      if (y <= shell.top + edge) return "North";
+      if (y >= shell.bottom - edge) return "South";
+      if (x <= shell.left + edge) return "West";
+      if (x >= shell.right - edge) return "East";
+      return null;
+    };
+    const clearResizeCursor = () => { delete root.dataset.windowResize; };
+    const updateResizeCursor = (event: PointerEvent) => {
+      const direction = resizeDirection(event);
+      if (direction) root.dataset.windowResize = direction;
+      else clearResizeCursor();
+    };
+    const resizeFromEdge = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const direction = resizeDirection(event);
+      if (!direction) return;
+      event.preventDefault();
+      event.stopPropagation();
+      void getCurrentWindow().startResizeDragging(direction).catch(clearResizeCursor);
+    };
+    document.addEventListener("pointerdown", resizeFromEdge, true);
+    document.addEventListener("pointermove", updateResizeCursor);
+    document.addEventListener("pointerup", clearResizeCursor, true);
+    document.documentElement.addEventListener("pointerleave", clearResizeCursor);
+    window.addEventListener("blur", clearResizeCursor);
+    return () => {
+      document.removeEventListener("pointerdown", resizeFromEdge, true);
+      document.removeEventListener("pointermove", updateResizeCursor);
+      document.removeEventListener("pointerup", clearResizeCursor, true);
+      document.documentElement.removeEventListener("pointerleave", clearResizeCursor);
+      window.removeEventListener("blur", clearResizeCursor);
+      clearResizeCursor();
+    };
   }, []);
 
   const updateSettings = useCallback<SettingsUpdater>((updater) => {

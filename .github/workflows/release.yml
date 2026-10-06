@@ -49,6 +49,15 @@ jobs:
             echo "package.json version $PACKAGE_VERSION does not match Tauri version $APP_VERSION." >&2
             exit 2
           }
+          CARGO_VERSION="$(awk -F'"' '
+            /^\[package\]$/ { in_package = 1; next }
+            /^\[/ { if (in_package) exit }
+            in_package && /^version[[:space:]]*=/ { print $2; exit }
+          ' src-tauri/Cargo.toml)"
+          [[ "$CARGO_VERSION" == "$APP_VERSION" ]] || {
+            echo "Cargo.toml version $CARGO_VERSION does not match Tauri version $APP_VERSION." >&2
+            exit 2
+          }
 
           if ! gh release view "$REQUESTED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$REQUESTED_TAG" \

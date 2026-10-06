@@ -1,13 +1,7 @@
-@font-face {
-  font-family: "Aurora Windows Chinese";
-  src: local("YouYuan"), local("SimHei");
-  unicode-range: U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FF00-FFEF;
-}
-
 :root {
   --window-radius: 12px;
   color: #25243a;
-  font-family: var(--ui-font, -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", Inter, sans-serif);
+  font-family: var(--ui-font, system-ui, sans-serif);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -499,8 +493,8 @@ footer i { width: 1px; height: 10px; margin: 0 3px; background: rgba(109,102,135
 /* Theme tokens and display preferences. The settings panel changes these values live. */
 :root {
   --ui-scale: 1;
-  --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
-  --word-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", Inter, sans-serif;
+  --ui-font: system-ui, sans-serif;
+  --word-font: var(--ui-font);
   --surface-opacity: .94;
   --material-blur: 28px;
   --accent: #706bdd;
@@ -572,6 +566,31 @@ footer i { width: 1px; height: 10px; margin: 0 3px; background: rgba(109,102,135
 .content-panel::-webkit-scrollbar-thumb { background: transparent; border: 3px solid transparent; border-radius: 99px; background-clip: padding-box; }
 .content-panel:hover, #app.is-scrolling .content-panel { scrollbar-color: rgba(var(--accent-rgb), .7) transparent; }
 .content-panel:hover::-webkit-scrollbar-thumb, #app.is-scrolling .content-panel::-webkit-scrollbar-thumb { background-color: rgba(var(--accent-rgb), .7); }
+
+/* Keep the Windows scrollbar visibly inside the custom-drawn frame. A small
+   outer gutter separates the WebView scrollbar from the rounded window edge,
+   while the inset track prevents the thumb from looking like native chrome
+   floating beyond the application canvas. */
+:root[data-platform="windows"] .content-panel {
+  margin: 2px 4px 2px 0;
+  scrollbar-gutter: stable;
+  scrollbar-color: rgba(var(--accent-rgb), .34) rgba(var(--accent-rgb), .045);
+}
+:root[data-platform="windows"] .content-panel::-webkit-scrollbar { width: 12px; }
+:root[data-platform="windows"] .content-panel::-webkit-scrollbar-track {
+  margin-block: 6px;
+  background: rgba(var(--accent-rgb), .045);
+  border-radius: 999px;
+}
+:root[data-platform="windows"] .content-panel::-webkit-scrollbar-thumb {
+  min-height: 38px;
+  background-color: rgba(var(--accent-rgb), .34);
+  border: 4px solid transparent;
+}
+:root[data-platform="windows"] .content-panel:hover::-webkit-scrollbar-thumb,
+:root[data-platform="windows"] #app.is-scrolling .content-panel::-webkit-scrollbar-thumb {
+  background-color: rgba(var(--accent-rgb), .72);
+}
 
 .app-shell {
   width: calc(100% / var(--ui-scale));
@@ -882,9 +901,14 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 .vocabulary-list-empty { margin: 26px 10px; color: var(--muted); font-size: 11px; line-height: 1.65; text-align: center; }
 .vocabulary-editor-card { min-width: 0; padding: 20px; }
 .vocabulary-word-fields { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px; }
-.vocabulary-word-fields label { display: grid; gap: 6px; color: var(--soft-ink); font-size: 10px; font-weight: 750; }
+.vocabulary-word-fields label, .vocabulary-phonetic-field { display: grid; gap: 6px; color: var(--soft-ink); font-size: 10px; font-weight: 750; }
 .vocabulary-word-fields input { width: 100%; min-height: 42px; padding: 0 12px; color: var(--ink); font: 650 13px var(--ui-font); background: rgba(var(--accent-rgb), .045); border: 1px solid rgba(var(--accent-rgb), .13); border-radius: 11px; outline: 0; }
 .vocabulary-word-fields input:focus, .markdown-field textarea:focus { border-color: rgba(var(--accent-rgb), .43); box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .08); }
+.vocabulary-phonetic-control { position: relative; }
+.vocabulary-phonetic-control input { padding-right: 48px; }
+.vocabulary-phonetic-control button { position: absolute; top: 4px; right: 4px; display: grid; width: 34px; height: 34px; padding: 0; place-items: center; color: var(--accent); background: rgba(var(--accent-rgb), .09); border: 1px solid rgba(var(--accent-rgb), .12); border-radius: 8px; transition: color .14s ease, background .14s ease, transform .14s var(--ease-out); }
+.vocabulary-phonetic-control button:hover:not(:disabled) { color: var(--on-accent); background: var(--accent); }
+.vocabulary-phonetic-control button:disabled { cursor: default; opacity: .4; }
 .markdown-field { margin-top: 15px; }
 .markdown-field > header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
 .markdown-field > header > div { display: flex; align-items: baseline; gap: 7px; }
@@ -932,7 +956,63 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 /* Restrained macOS-style depth: controls read through shape, border and state
    instead of the raised, glossy treatment used by newer liquid materials. */
 .app-shell { box-shadow: inset 0 1px rgba(var(--card-rgb), .72); }
+/* Linux's undecorated window has no native shadow. Paint it within a clear
+   gutter, outside the opaque rounded canvas, without scaling the gutter. */
+:root[data-platform="linux"] { --window-gutter: 20px; }
+:root[data-platform="linux"] body {
+  padding: var(--window-gutter);
+}
+:root[data-platform="linux"],
+:root[data-platform="linux"] body {
+  border-radius: 0;
+  -webkit-mask-image: none;
+}
+:root[data-platform="linux"] #app {
+  overflow: visible;
+  border-radius: 0;
+  clip-path: none;
+  -webkit-clip-path: none;
+}
+:root[data-platform="linux"] .app-shell {
+  height: calc((100vh - 2 * var(--window-gutter)) / var(--ui-scale));
+  min-height: calc((100vh - 2 * var(--window-gutter)) / var(--ui-scale));
+  border-radius: calc(var(--window-radius) / var(--ui-scale));
+  box-shadow: 0 calc(6px / var(--ui-scale)) calc(14px / var(--ui-scale)) calc(-3px / var(--ui-scale)) rgba(18, 20, 32, .28),
+    0 calc(1px / var(--ui-scale)) calc(4px / var(--ui-scale)) rgba(18, 20, 32, .16), inset 0 1px rgba(var(--card-rgb), .72);
+}
+:root[data-platform="linux"][data-window-expanded="true"],
+:root[data-platform="linux"][data-window-tiled="true"] {
+  --window-gutter: 0px;
+  --window-radius: 0px;
+}
+:root[data-platform="linux"][data-window-expanded="true"] .app-shell,
+:root[data-platform="linux"][data-window-tiled="true"] .app-shell { box-shadow: none; }
+:root[data-window-resize="NorthWest"], :root[data-window-resize="NorthWest"] *,
+:root[data-window-resize="SouthEast"], :root[data-window-resize="SouthEast"] * { cursor: nwse-resize !important; }
+:root[data-window-resize="NorthEast"], :root[data-window-resize="NorthEast"] *,
+:root[data-window-resize="SouthWest"], :root[data-window-resize="SouthWest"] * { cursor: nesw-resize !important; }
+:root[data-window-resize="North"], :root[data-window-resize="North"] *,
+:root[data-window-resize="South"], :root[data-window-resize="South"] * { cursor: ns-resize !important; }
+:root[data-window-resize="West"], :root[data-window-resize="West"] *,
+:root[data-window-resize="East"], :root[data-window-resize="East"] * { cursor: ew-resize !important; }
 .titlebar { background: rgba(var(--card-rgb), calc(var(--surface-opacity) * .54)); backdrop-filter: saturate(125%) blur(16px); -webkit-backdrop-filter: saturate(125%) blur(16px); }
+/* Keep Linux window controls in the normal paint path. A backdrop-filter
+   inside the scaled, rounded shell can lose its backing during live resize. */
+:root[data-platform="linux"] .titlebar {
+  position: relative;
+  z-index: 1;
+  background-color: rgb(var(--canvas-rgb));
+  background-image: linear-gradient(
+    rgba(var(--card-rgb), calc(var(--surface-opacity) * .54)),
+    rgba(var(--card-rgb), calc(var(--surface-opacity) * .54))
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+:root[data-platform="linux"] .content-panel {
+  position: relative;
+  z-index: 0;
+}
 .brand-app-icon { filter: none; }
 .search-box { box-shadow: 0 3px 12px rgba(45, 40, 86, .065), inset 0 1px rgba(var(--card-rgb), .8); }
 .search-box:focus-within { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .11), 0 3px 12px rgba(45, 40, 86, .07); transform: none; }
@@ -957,6 +1037,88 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 :root[data-theme="black"] .modal-scrim { background: rgba(0,0,0,.54); }
 :root[data-theme="black"] .definition-pill, :root[data-theme="black"] .source-tab.is-active { box-shadow: inset 0 1px rgba(255,255,255,.045); }
 
+/* v1.2 visual refresh: a compact, content-first desktop hierarchy inspired by
+   pre-Liquid-Glass macOS. Shape, spacing and tint carry state; shadows stay
+   shallow so the dictionary reads like a focused utility instead of a
+   marketing page. */
+.app-shell {
+  background:
+    radial-gradient(58rem 30rem at 100% 0, rgba(var(--accent-rgb), .11), transparent 62%),
+    linear-gradient(180deg, rgb(var(--canvas-rgb)), color-mix(in srgb, rgb(var(--canvas-rgb)) 96%, rgb(var(--accent-rgb)) 4%));
+}
+.app-shell::before, .app-shell::after { display: none; }
+main { width: min(1040px, calc(100% - 54px)); padding: 14px 0 32px; }
+.hero { min-height: 46px; padding: 0 3px; gap: 20px; }
+.hero h1 { font-size: 22px; font-weight: 730; letter-spacing: -.035em; line-height: 1.1; white-space: nowrap; }
+.quick-actions { gap: 2px; padding: 3px; border-radius: 11px; }
+.quick-action {
+  display: inline-flex;
+  width: auto;
+  min-width: 84px;
+  height: 34px;
+  padding: 0 11px;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 680;
+}
+.quick-action span { white-space: nowrap; }
+.quick-action > i, .quick-action > .fa-language { font-size: 13px; }
+.quick-action::after { display: none; }
+.quick-action.is-active { box-shadow: none; }
+.lookup-zone { margin-top: 12px; }
+.search-box {
+  min-height: 58px;
+  padding: 6px 7px 6px 17px;
+  border-color: rgba(var(--accent-rgb), .15);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(45, 40, 86, .055), inset 0 1px rgba(var(--card-rgb), .78);
+}
+.search-box:focus-within { box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .1), 0 2px 8px rgba(45, 40, 86, .06); }
+.search-box input { padding: 9px 0; font-size: 16px; }
+.search-box input::placeholder { font-size: 14px; }
+.search-icon { margin-right: 11px; }
+.search-submit { min-width: 90px; height: 44px; border-radius: 8px; box-shadow: none; }
+.search-submit:hover { box-shadow: none; }
+.search-box:has(.input-suggestions:not([hidden])) { border-radius: 12px 12px 0 0; box-shadow: 0 2px 8px rgba(45, 40, 86, .06); }
+.input-suggestions { border-radius: 0 0 12px 12px; box-shadow: 0 8px 18px rgba(45, 40, 86, .11); }
+.source-section { margin-top: 13px; }
+.source-switcher { gap: 3px; padding: 4px; border-radius: 11px; }
+.source-tab { min-height: 49px; padding: 7px 11px; border-radius: 8px; }
+.source-tab.is-active { box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), .08); }
+.source-tab.is-active::after { top: 10px; right: 10px; width: 4px; height: 4px; box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .11); }
+.source-tab-title { font-size: 12px; }
+.source-tab-caption { font-size: 10px; }
+.results-stage { margin-top: 13px; }
+.entry-card {
+  padding: 20px;
+  border-color: rgba(var(--accent-rgb), .11);
+  border-radius: 12px;
+  box-shadow: 0 2px 9px rgba(45, 40, 86, .055), inset 0 1px rgba(var(--card-rgb), .78);
+}
+.entry-card::before, .online-entry::before { display: none; }
+.entry-card-head { padding-bottom: 16px; }
+.word-line h2 { font-size: clamp(26px, 3.5vw, 32px); }
+.sense-card, .examples-section, .phrases-section, .llm-content { border-radius: 10px; }
+.definition-pill, .example-card, .phrase-card, .english-gloss, .source-note { border-radius: 8px; box-shadow: none; }
+.pronunciation-variant { border-radius: 8px; }
+.empty-state { min-height: 220px; border-radius: 12px; }
+.settings-tab-switcher { margin-top: 18px; border-radius: 11px; }
+.settings-category-tab { border-radius: 8px; }
+.settings-card, .translation-form, .translation-result, .vocabulary-storage-card, .vocabulary-list-panel, .vocabulary-editor-card {
+  border-color: rgba(var(--accent-rgb), .11);
+  border-radius: 12px;
+  box-shadow: 0 2px 9px rgba(45, 40, 86, .05), inset 0 1px rgba(var(--card-rgb), .8);
+}
+.panel-page-heading { margin-top: 18px; }
+.panel-page-heading h2 { font-size: 23px; }
+button:active:not(:disabled) { transform: scale(.97); }
+
+@media (hover: hover) and (pointer: fine) {
+  .quick-action:hover, .source-tab:hover, .settings-category-tab:hover { transform: none; }
+}
+
 @keyframes float-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes bounce { 0%, 75%, 100% { transform: translateY(0); opacity: .45; } 35% { transform: translateY(-7px); opacity: 1; } }
 @keyframes download-progress { 0% { transform: translateX(-115%); } 100% { transform: translateX(270%); } }
@@ -971,7 +1133,8 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
   .hero { min-height: auto; padding: 0 4px; }
   .hero-orb { width: 94px; height: 94px; border-radius: 29px; }
   .hero-orb span { font-size: 34px; }
-  .quick-action { width: 39px; height: 39px; }
+  .quick-action { width: 36px; min-width: 36px; height: 34px; padding: 0; }
+  .quick-action span { display: none; }
   .source-tab { grid-template-columns: 1fr; padding: 10px 8px; text-align: center; }
   .source-tab-title { font-size: 11px; }
   .source-tab-caption { font-size: 10px; }
@@ -999,12 +1162,13 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
   .hero-orb { display: none; }
   .quick-actions { gap: 3px; }
   .quick-action { width: 36px; height: 36px; }
+  .quick-action span { display: none; }
   .panel-page-heading { margin-top: 24px; }
   .settings-tab-switcher { margin-top: 24px; }
   .settings-category-tab { gap: 5px; padding: 8px 6px; font-size: 10px; }
   .settings-category-tab.is-active::after { top: 7px; right: 7px; }
-  .settings-card, .translation-form, .translation-result { padding: 16px; border-radius: 15px; }
-  .search-box { min-height: 59px; padding-left: 15px; border-radius: 18px; }
+  .settings-card, .translation-form, .translation-result { padding: 16px; border-radius: 12px; }
+  .search-box { min-height: 56px; padding-left: 15px; border-radius: 11px; }
   .search-box input { font-size: 15px; }
   .search-submit { min-width: 72px; height: 43px; padding: 0 12px; font-size: 12px; border-radius: 8px; }
   .search-hint { margin-left: 4px; margin-right: 4px; }
