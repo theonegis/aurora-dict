@@ -4,7 +4,7 @@ Aurora Dict 是一款为 Linux 用户而做、也同样适用于 macOS 与 Windo
 
 许多 Linux 上可用的词典要么界面陈旧，要么必须依赖网页或复杂的导入流程。这个项目希望提供另一种体验：打开即可使用的离线词库、清晰可靠的中英查询，以及一个安静、精致、不打扰阅读的桌面界面。它使用 Tauri 2 构建，前端采用 React、TypeScript 与 Vite；在保持轻量的同时，将 iOS 的卡片层次与 Windows Mica 的半透明质感带到桌面端。
 
-![Aurora Dict 1.2 生词本与音标朗读](docs/images/aurora-dict.png)
+![Aurora Dict 1.2 本地 AI 单词查询结果](docs/images/aurora-dict.png)
 
 ## 特性
 
