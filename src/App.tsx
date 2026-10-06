@@ -288,7 +288,7 @@ function TitleBar({ t }: { t: Translator }) {
 function Hero({ panel, setPanel, t }: { panel: PanelId; setPanel: (panel: PanelId) => void; t: Translator }) {
   const panelTitle = panel === "dictionary" ? t("quickDictionaryTip") : panel === "translation" ? t("quickTranslationTip") : panel === "vocabulary" ? t("quickVocabularyTip") : t("quickSettingsTip");
   return <section className="hero">
-    <h1 className={panel === "dictionary" ? undefined : "sr-only"}>{panelTitle}</h1>
+    <h1>{panelTitle}</h1>
     <nav className="quick-actions" aria-label={t("mainNavigation")}>
       <button className={`quick-action ${panel === "dictionary" ? "is-active" : ""}`} onClick={() => setPanel("dictionary")} type="button" aria-current={panel === "dictionary" ? "page" : undefined} aria-label={t("quickDictionaryTip")} title={t("quickDictionaryTip")}><i className="fa-solid fa-magnifying-glass" aria-hidden="true" /><span>{t("quickDictionaryTip")}</span></button>
       <button className={`quick-action ${panel === "translation" ? "is-active" : ""}`} onClick={() => setPanel("translation")} type="button" aria-current={panel === "translation" ? "page" : undefined} aria-label={t("quickTranslationTip")} title={t("quickTranslationTip")}><i className="fa-solid fa-language" aria-hidden="true" /><span>{t("quickTranslationTip")}</span></button>

@@ -1049,8 +1049,8 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 .app-shell::before, .app-shell::after { display: none; }
 main { width: min(1040px, calc(100% - 54px)); padding: 14px 0 32px; }
 .hero { min-height: 46px; padding: 0 3px; gap: 20px; }
-.hero h1 { font-size: 22px; font-weight: 730; letter-spacing: -.035em; line-height: 1.1; white-space: nowrap; }
-.quick-actions { gap: 2px; padding: 3px; border-radius: 11px; }
+.hero h1 { min-width: 0; overflow: hidden; font-size: 22px; font-weight: 730; letter-spacing: -.035em; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
+.quick-actions { flex: 0 0 auto; gap: 2px; margin-left: auto; padding: 3px; border-radius: 11px; }
 .quick-action {
   display: inline-flex;
   width: auto;
