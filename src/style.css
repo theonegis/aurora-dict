@@ -956,33 +956,12 @@ footer { color: var(--muted); background: rgba(var(--card-rgb), calc(var(--surfa
 /* Restrained macOS-style depth: controls read through shape, border and state
    instead of the raised, glossy treatment used by newer liquid materials. */
 .app-shell { box-shadow: inset 0 1px rgba(var(--card-rgb), .72); }
-/* Linux's undecorated window has no native shadow. Paint it within a clear
-   gutter, outside the opaque rounded canvas, without scaling the gutter. */
-:root[data-platform="linux"] { --window-gutter: 20px; }
-:root[data-platform="linux"] body {
-  padding: var(--window-gutter);
-}
-:root[data-platform="linux"],
-:root[data-platform="linux"] body {
-  border-radius: 0;
-  -webkit-mask-image: none;
-}
-:root[data-platform="linux"] #app {
-  overflow: visible;
-  border-radius: 0;
-  clip-path: none;
-  -webkit-clip-path: none;
-}
-:root[data-platform="linux"] .app-shell {
-  height: calc((100vh - 2 * var(--window-gutter)) / var(--ui-scale));
-  min-height: calc((100vh - 2 * var(--window-gutter)) / var(--ui-scale));
-  border-radius: calc(var(--window-radius) / var(--ui-scale));
-  box-shadow: 0 calc(6px / var(--ui-scale)) calc(14px / var(--ui-scale)) calc(-3px / var(--ui-scale)) rgba(18, 20, 32, .28),
-    0 calc(1px / var(--ui-scale)) calc(4px / var(--ui-scale)) rgba(18, 20, 32, .16), inset 0 1px rgba(var(--card-rgb), .72);
-}
+/* On Linux the web canvas must fill the native window. A transparent gutter
+   still belongs to the rectangular GTK surface, so Mutter outlines it as a
+   second window behind the app. The compositor can paint the exterior shadow;
+   keep only the transparent corner pixels inside the actual window bounds. */
 :root[data-platform="linux"][data-window-expanded="true"],
 :root[data-platform="linux"][data-window-tiled="true"] {
-  --window-gutter: 0px;
   --window-radius: 0px;
 }
 :root[data-platform="linux"][data-window-expanded="true"] .app-shell,

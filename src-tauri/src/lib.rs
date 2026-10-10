@@ -1729,6 +1729,31 @@ mod tests {
 fn configure_linux_native_window(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use gtk::prelude::*;
 
+    let gtk_window = window.gtk_window()?;
+
+    // GTK themes paint a solid `window.background` layer below WebKit. That
+    // layer is visible in the gutter reserved for the client-rendered shadow,
+    // even when Tauri and the page both request a transparent background.
+    // Give the native window an RGBA visual and override the theme layer so
+    // only the rounded web canvas and its shadow are painted there.
+    gtk_window.set_app_paintable(true);
+    if let Some(screen) = gtk::prelude::WidgetExt::screen(&gtk_window) {
+        if let Some(visual) = screen.rgba_visual() {
+            gtk_window.set_visual(Some(&visual));
+        }
+    }
+    gtk_window
+        .style_context()
+        .add_class("aurora-transparent-window");
+    let transparent_window_css = gtk::CssProvider::new();
+    transparent_window_css.load_from_data(
+        b"window.aurora-transparent-window.background { background-color: transparent; background-image: none; }",
+    ).map_err(|error| std::io::Error::other(error.to_string()))?;
+    gtk_window.style_context().add_provider(
+        &transparent_window_css,
+        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
     // GNOME refuses half-screen tiling when the minimum width exceeds half
     // the logical work area (780px on a 3120px display at 200% scaling).
     window.set_min_size(Some(tauri::LogicalSize::new(600.0, 500.0)))?;
@@ -1737,24 +1762,22 @@ fn configure_linux_native_window(window: &tauri::WebviewWindow) -> tauri::Result
     // GTK reports it on both Wayland and XWayland. Keep it separate from the
     // frontend's maximized/fullscreen flag so resize queries cannot clear it.
     let frontend = window.clone();
-    window
-        .gtk_window()?
-        .connect_window_state_event(move |_, event| {
-            let tiled = event.new_window_state().intersects(
-                gtk::gdk::WindowState::TILED
-                    | gtk::gdk::WindowState::TOP_TILED
-                    | gtk::gdk::WindowState::RIGHT_TILED
-                    | gtk::gdk::WindowState::BOTTOM_TILED
-                    | gtk::gdk::WindowState::LEFT_TILED,
-            );
-            let script = if tiled {
-                "document.documentElement.dataset.windowTiled = 'true'"
-            } else {
-                "document.documentElement.dataset.windowTiled = 'false'"
-            };
-            let _ = frontend.eval(script);
-            gtk::glib::Propagation::Proceed
-        });
+    gtk_window.connect_window_state_event(move |_, event| {
+        let tiled = event.new_window_state().intersects(
+            gtk::gdk::WindowState::TILED
+                | gtk::gdk::WindowState::TOP_TILED
+                | gtk::gdk::WindowState::RIGHT_TILED
+                | gtk::gdk::WindowState::BOTTOM_TILED
+                | gtk::gdk::WindowState::LEFT_TILED,
+        );
+        let script = if tiled {
+            "document.documentElement.dataset.windowTiled = 'true'"
+        } else {
+            "document.documentElement.dataset.windowTiled = 'false'"
+        };
+        let _ = frontend.eval(script);
+        gtk::glib::Propagation::Proceed
+    });
     Ok(())
 }
 
